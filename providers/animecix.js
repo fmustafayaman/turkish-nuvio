@@ -1,6 +1,6 @@
 /**
  * animecix - Built from src/animecix/
- * Generated: 2026-06-29T12:00:36.382Z
+ * Generated: 2026-06-29T12:12:07.404Z
  */
 var __defProp = Object.defineProperty;
 var __getOwnPropSymbols = Object.getOwnPropertySymbols;
@@ -65,20 +65,17 @@ var STREAM_HEADERS = {
   "Origin": "https://tau-video.xyz"
 };
 
-// src/shared/tmdb.js
-var DEFAULT_TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
-function getTmdbApiKey() {
+// src/shared/http.js
+var DEFAULT_TIMEOUT_MS = 15e3;
+function timeoutSignal(ms = DEFAULT_TIMEOUT_MS) {
   try {
-    const injected = typeof globalThis !== "undefined" ? globalThis.TMDB_API_KEY : "";
-    if (injected)
-      return String(injected).trim();
+    if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
+      return AbortSignal.timeout(ms);
+    }
   } catch (e) {
   }
-  return DEFAULT_TMDB_API_KEY;
+  return void 0;
 }
-
-// src/animecix/utils.js
-var DEFAULT_TIMEOUT_MS = 15e3;
 function withTimeout(promise, ms = DEFAULT_TIMEOUT_MS, label = "") {
   if (typeof setTimeout !== "function") {
     return Promise.resolve(promise);
@@ -102,12 +99,27 @@ function withTimeout(promise, ms = DEFAULT_TIMEOUT_MS, label = "") {
     }
   );
 }
+
+// src/shared/tmdb.js
+var DEFAULT_TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
+function getTmdbApiKey() {
+  try {
+    const injected = typeof globalThis !== "undefined" ? globalThis.TMDB_API_KEY : "";
+    if (injected)
+      return String(injected).trim();
+  } catch (e) {
+  }
+  return DEFAULT_TMDB_API_KEY;
+}
+
+// src/animecix/utils.js
 function fetchJson(_0) {
   return __async(this, arguments, function* (url, options = {}) {
     const _a = options, { timeout = DEFAULT_TIMEOUT_MS } = _a, rest = __objRest(_a, ["timeout"]);
     return yield withTimeout((() => __async(this, null, function* () {
       const response = yield fetch(url, __spreadValues({
-        headers: __spreadValues(__spreadValues({}, DEFAULT_HEADERS), rest.headers)
+        headers: __spreadValues(__spreadValues({}, DEFAULT_HEADERS), rest.headers),
+        signal: timeoutSignal(timeout)
       }, rest));
       if (!response.ok) {
         throw new Error(`HTTP ${response.status} on ${url}`);
@@ -122,7 +134,8 @@ function fetchWithRedirect(_0) {
     return yield withTimeout((() => __async(this, null, function* () {
       const response = yield fetch(url, {
         headers: DEFAULT_HEADERS,
-        redirect: "follow"
+        redirect: "follow",
+        signal: timeoutSignal(timeout)
       });
       if (!response.ok) {
         throw new Error(`HTTP ${response.status} on ${url}`);

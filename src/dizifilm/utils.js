@@ -1,25 +1,34 @@
 import { SITE_HEADERS } from './constants.js';
+import { withTimeout, timeoutSignal, DEFAULT_TIMEOUT_MS } from '../shared/http.js';
 
 export async function fetchText(url, options = {}) {
-    const response = await fetch(url, {
-        headers: { ...SITE_HEADERS, ...(options.headers || {}) },
-        ...options
-    });
-    if (!response.ok) {
-        throw new Error(`HTTP ${response.status} on ${url}`);
-    }
-    return await response.text();
+    const { timeout = DEFAULT_TIMEOUT_MS, ...rest } = options;
+    return await withTimeout((async () => {
+        const response = await fetch(url, {
+            headers: { ...SITE_HEADERS, ...(rest.headers || {}) },
+            signal: timeoutSignal(timeout),
+            ...rest
+        });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status} on ${url}`);
+        }
+        return await response.text();
+    })(), timeout, url);
 }
 
 export async function fetchJson(url, options = {}) {
-    const response = await fetch(url, {
-        headers: { ...SITE_HEADERS, ...(options.headers || {}) },
-        ...options
-    });
-    if (!response.ok) {
-        throw new Error(`HTTP ${response.status} on ${url}`);
-    }
-    return await response.json();
+    const { timeout = DEFAULT_TIMEOUT_MS, ...rest } = options;
+    return await withTimeout((async () => {
+        const response = await fetch(url, {
+            headers: { ...SITE_HEADERS, ...(rest.headers || {}) },
+            signal: timeoutSignal(timeout),
+            ...rest
+        });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status} on ${url}`);
+        }
+        return await response.json();
+    })(), timeout, url);
 }
 
 const TR_ASCII_MAP = {

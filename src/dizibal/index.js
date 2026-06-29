@@ -1,4 +1,5 @@
 import { getTmdbInfo } from '../shared/tmdb.js';
+import { withTimeout, timeoutSignal, DEFAULT_TIMEOUT_MS } from '../shared/http.js';
 
 const BASE_URL = 'https://dizibal.com';
 
@@ -28,11 +29,16 @@ function normalizeTitle(value) {
 }
 
 async function fetchJson(path) {
-    const response = await fetch(`${BASE_URL}${path}`, { headers: HEADERS });
-    if (!response.ok) {
-        throw new Error(`HTTP ${response.status} on ${path}`);
-    }
-    return await response.json();
+    return await withTimeout((async () => {
+        const response = await fetch(`${BASE_URL}${path}`, {
+            headers: HEADERS,
+            signal: timeoutSignal(DEFAULT_TIMEOUT_MS)
+        });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status} on ${path}`);
+        }
+        return await response.json();
+    })(), DEFAULT_TIMEOUT_MS, path);
 }
 
 function apiPath(path, params = {}) {

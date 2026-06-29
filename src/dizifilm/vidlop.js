@@ -1,5 +1,6 @@
 import { VIDLOP_ORIGIN, SITE_HEADERS } from './constants.js';
 import { collectCookies } from './utils.js';
+import { timeoutSignal } from '../shared/http.js';
 
 function decodeUnicodeEscapes(value) {
     return String(value || '').replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) =>
@@ -145,7 +146,8 @@ export async function extractVidlopSubtitles(videoUrl, referer) {
         headers: {
             ...SITE_HEADERS,
             Referer: referer || `${VIDLOP_ORIGIN}/`
-        }
+        },
+        signal: timeoutSignal()
     }).then(r => (r.ok ? r.text() : ''));
 
     return collectSubtitles(pageHtml).map(sub => ({
@@ -167,7 +169,8 @@ export async function extractVidlop(videoUrl, referer) {
         headers: {
             ...SITE_HEADERS,
             Referer: referer || `${VIDLOP_ORIGIN}/`
-        }
+        },
+        signal: timeoutSignal()
     });
     if (!pageResponse.ok) {
         throw new Error(`HTTP ${pageResponse.status} on ${pageUrl}`);
@@ -188,7 +191,8 @@ export async function extractVidlop(videoUrl, referer) {
                 'Content-Type': 'application/x-www-form-urlencoded',
                 ...(cookie ? { Cookie: cookie } : {})
             },
-            body
+            body,
+            signal: timeoutSignal()
         }
     );
 

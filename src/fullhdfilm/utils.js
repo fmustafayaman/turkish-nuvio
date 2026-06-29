@@ -1,29 +1,37 @@
 import { decodeBase64 } from '../shared/base64.js';
 import { SITE_HEADERS } from './constants.js';
+import { withTimeout, timeoutSignal, DEFAULT_TIMEOUT_MS } from '../shared/http.js';
 
 export async function fetchText(url, options = {}) {
-    const response = await fetch(url, {
-        headers: { ...SITE_HEADERS, ...(options.headers || {}) }
-    });
-    if (!response.ok) {
-        throw new Error(`HTTP ${response.status} on ${url}`);
-    }
-    return await response.text();
+    const { timeout = DEFAULT_TIMEOUT_MS } = options;
+    return await withTimeout((async () => {
+        const response = await fetch(url, {
+            headers: { ...SITE_HEADERS, ...(options.headers || {}) },
+            signal: timeoutSignal(timeout)
+        });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status} on ${url}`);
+        }
+        return await response.text();
+    })(), timeout, url);
 }
 
 export async function postText(url, referer) {
-    const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-            ...SITE_HEADERS,
-            Referer: referer || '',
-            'X-Requested-With': 'XMLHttpRequest'
+    return await withTimeout((async () => {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                ...SITE_HEADERS,
+                Referer: referer || '',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            signal: timeoutSignal(DEFAULT_TIMEOUT_MS)
+        });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status} on ${url}`);
         }
-    });
-    if (!response.ok) {
-        throw new Error(`HTTP ${response.status} on ${url}`);
-    }
-    return await response.text();
+        return await response.text();
+    })(), DEFAULT_TIMEOUT_MS, url);
 }
 
 // scx içindeki linkler ROT13 + base64 ile şifrelenmiş.

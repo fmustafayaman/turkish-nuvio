@@ -1,3 +1,5 @@
+import { withTimeout, timeoutSignal, DEFAULT_TIMEOUT_MS } from './http.js';
+
 // Nuvio plugin runtime'ı TMDB anahtarını provider'a enjekte ETMEZ; provider'lar
 // kendi anahtarını taşımak zorunda. Topluluk genelinde paylaşılan public TMDB
 // anahtarını kullanıyoruz (kişisel anahtar değil). Eğer runtime globalThis.TMDB_API_KEY
@@ -14,33 +16,10 @@ export function getTmdbApiKey() {
     return DEFAULT_TMDB_API_KEY;
 }
 
-// Nuvio runtime'ı tek instance; timeout'suz fetch upstream takılırsa provider
-// kilitlenir. AbortController bu runtime'da güvenilir değil, Promise.race kullanıyoruz.
-const DEFAULT_TIMEOUT_MS = 15000;
-
-export function withTimeout(promise, ms = DEFAULT_TIMEOUT_MS, label = '') {
-    // Nuvio plugin sandbox'ında setTimeout her zaman tanımlı değil (sadece fetch
-    // ve console garanti). Yoksa timeout'suz devam et; aksi halde withTimeout'un
-    // kendisi ReferenceError fırlatıp TÜM provider'ları çökertir.
-    if (typeof setTimeout !== 'function') {
-        return Promise.resolve(promise);
-    }
-    let timer = null;
-    const timeout = new Promise((_, reject) => {
-        timer = setTimeout(() => {
-            reject(new Error(`Timeout after ${ms}ms${label ? ` (${label})` : ''}`));
-        }, ms);
-    });
-    return Promise.race([promise, timeout]).then(
-        value => { if (timer) clearTimeout(timer); return value; },
-        error => { if (timer) clearTimeout(timer); throw error; }
-    );
-}
-
 export async function fetchJson(url, options = {}) {
     const { timeout = DEFAULT_TIMEOUT_MS, ...rest } = options;
     return await withTimeout((async () => {
-        const response = await fetch(url, rest);
+        const response = await fetch(url, { signal: timeoutSignal(timeout), ...rest });
         if (!response.ok) {
             throw new Error(`HTTP ${response.status} on ${url}`);
         }

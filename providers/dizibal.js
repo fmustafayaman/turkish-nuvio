@@ -1,10 +1,23 @@
 /**
  * dizibal - Built from src/dizibal/
- * Generated: 2026-06-29T12:00:36.416Z
+ * Generated: 2026-06-29T12:12:07.442Z
  */
+var __defProp = Object.defineProperty;
 var __getOwnPropSymbols = Object.getOwnPropertySymbols;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
 var __propIsEnum = Object.prototype.propertyIsEnumerable;
+var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+var __spreadValues = (a, b) => {
+  for (var prop in b || (b = {}))
+    if (__hasOwnProp.call(b, prop))
+      __defNormalProp(a, prop, b[prop]);
+  if (__getOwnPropSymbols)
+    for (var prop of __getOwnPropSymbols(b)) {
+      if (__propIsEnum.call(b, prop))
+        __defNormalProp(a, prop, b[prop]);
+    }
+  return a;
+};
 var __objRest = (source, exclude) => {
   var target = {};
   for (var prop in source)
@@ -38,18 +51,17 @@ var __async = (__this, __arguments, generator) => {
   });
 };
 
-// src/shared/tmdb.js
-var DEFAULT_TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
-function getTmdbApiKey() {
+// src/shared/http.js
+var DEFAULT_TIMEOUT_MS = 15e3;
+function timeoutSignal(ms = DEFAULT_TIMEOUT_MS) {
   try {
-    const injected = typeof globalThis !== "undefined" ? globalThis.TMDB_API_KEY : "";
-    if (injected)
-      return String(injected).trim();
+    if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
+      return AbortSignal.timeout(ms);
+    }
   } catch (e) {
   }
-  return DEFAULT_TMDB_API_KEY;
+  return void 0;
 }
-var DEFAULT_TIMEOUT_MS = 15e3;
 function withTimeout(promise, ms = DEFAULT_TIMEOUT_MS, label = "") {
   if (typeof setTimeout !== "function") {
     return Promise.resolve(promise);
@@ -73,11 +85,23 @@ function withTimeout(promise, ms = DEFAULT_TIMEOUT_MS, label = "") {
     }
   );
 }
+
+// src/shared/tmdb.js
+var DEFAULT_TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
+function getTmdbApiKey() {
+  try {
+    const injected = typeof globalThis !== "undefined" ? globalThis.TMDB_API_KEY : "";
+    if (injected)
+      return String(injected).trim();
+  } catch (e) {
+  }
+  return DEFAULT_TMDB_API_KEY;
+}
 function fetchJson(_0) {
   return __async(this, arguments, function* (url, options = {}) {
     const _a = options, { timeout = DEFAULT_TIMEOUT_MS } = _a, rest = __objRest(_a, ["timeout"]);
     return yield withTimeout((() => __async(this, null, function* () {
-      const response = yield fetch(url, rest);
+      const response = yield fetch(url, __spreadValues({ signal: timeoutSignal(timeout) }, rest));
       if (!response.ok) {
         throw new Error(`HTTP ${response.status} on ${url}`);
       }
@@ -152,11 +176,16 @@ function normalizeTitle(value) {
 }
 function fetchJson2(path) {
   return __async(this, null, function* () {
-    const response = yield fetch(`${BASE_URL}${path}`, { headers: HEADERS });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status} on ${path}`);
-    }
-    return yield response.json();
+    return yield withTimeout((() => __async(this, null, function* () {
+      const response = yield fetch(`${BASE_URL}${path}`, {
+        headers: HEADERS,
+        signal: timeoutSignal(DEFAULT_TIMEOUT_MS)
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} on ${path}`);
+      }
+      return yield response.json();
+    }))(), DEFAULT_TIMEOUT_MS, path);
   });
 }
 function apiPath(path, params = {}) {

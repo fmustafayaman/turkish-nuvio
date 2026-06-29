@@ -1,6 +1,6 @@
 /**
  * fullhdfilm - Built from src/fullhdfilm/
- * Generated: 2026-06-29T12:00:36.420Z
+ * Generated: 2026-06-29T12:12:07.446Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -54,18 +54,17 @@ var __async = (__this, __arguments, generator) => {
   });
 };
 
-// src/shared/tmdb.js
-var DEFAULT_TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
-function getTmdbApiKey() {
+// src/shared/http.js
+var DEFAULT_TIMEOUT_MS = 15e3;
+function timeoutSignal(ms = DEFAULT_TIMEOUT_MS) {
   try {
-    const injected = typeof globalThis !== "undefined" ? globalThis.TMDB_API_KEY : "";
-    if (injected)
-      return String(injected).trim();
+    if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
+      return AbortSignal.timeout(ms);
+    }
   } catch (e) {
   }
-  return DEFAULT_TMDB_API_KEY;
+  return void 0;
 }
-var DEFAULT_TIMEOUT_MS = 15e3;
 function withTimeout(promise, ms = DEFAULT_TIMEOUT_MS, label = "") {
   if (typeof setTimeout !== "function") {
     return Promise.resolve(promise);
@@ -89,11 +88,23 @@ function withTimeout(promise, ms = DEFAULT_TIMEOUT_MS, label = "") {
     }
   );
 }
+
+// src/shared/tmdb.js
+var DEFAULT_TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
+function getTmdbApiKey() {
+  try {
+    const injected = typeof globalThis !== "undefined" ? globalThis.TMDB_API_KEY : "";
+    if (injected)
+      return String(injected).trim();
+  } catch (e) {
+  }
+  return DEFAULT_TMDB_API_KEY;
+}
 function fetchJson(_0) {
   return __async(this, arguments, function* (url, options = {}) {
     const _a = options, { timeout = DEFAULT_TIMEOUT_MS } = _a, rest = __objRest(_a, ["timeout"]);
     return yield withTimeout((() => __async(this, null, function* () {
-      const response = yield fetch(url, rest);
+      const response = yield fetch(url, __spreadValues({ signal: timeoutSignal(timeout) }, rest));
       if (!response.ok) {
         throw new Error(`HTTP ${response.status} on ${url}`);
       }
@@ -169,28 +180,35 @@ function decodeBase64(input) {
 // src/fullhdfilm/utils.js
 function fetchText(_0) {
   return __async(this, arguments, function* (url, options = {}) {
-    const response = yield fetch(url, {
-      headers: __spreadValues(__spreadValues({}, SITE_HEADERS), options.headers || {})
-    });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status} on ${url}`);
-    }
-    return yield response.text();
+    const { timeout = DEFAULT_TIMEOUT_MS } = options;
+    return yield withTimeout((() => __async(this, null, function* () {
+      const response = yield fetch(url, {
+        headers: __spreadValues(__spreadValues({}, SITE_HEADERS), options.headers || {}),
+        signal: timeoutSignal(timeout)
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} on ${url}`);
+      }
+      return yield response.text();
+    }))(), timeout, url);
   });
 }
 function postText(url, referer) {
   return __async(this, null, function* () {
-    const response = yield fetch(url, {
-      method: "POST",
-      headers: __spreadProps(__spreadValues({}, SITE_HEADERS), {
-        Referer: referer || "",
-        "X-Requested-With": "XMLHttpRequest"
-      })
-    });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status} on ${url}`);
-    }
-    return yield response.text();
+    return yield withTimeout((() => __async(this, null, function* () {
+      const response = yield fetch(url, {
+        method: "POST",
+        headers: __spreadProps(__spreadValues({}, SITE_HEADERS), {
+          Referer: referer || "",
+          "X-Requested-With": "XMLHttpRequest"
+        }),
+        signal: timeoutSignal(DEFAULT_TIMEOUT_MS)
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} on ${url}`);
+      }
+      return yield response.text();
+    }))(), DEFAULT_TIMEOUT_MS, url);
   });
 }
 function rot13(input) {

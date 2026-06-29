@@ -1,6 +1,6 @@
 /**
  * dizifilm - Built from src/dizifilm/
- * Generated: 2026-06-29T12:00:36.418Z
+ * Generated: 2026-06-29T12:12:07.444Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -54,18 +54,17 @@ var __async = (__this, __arguments, generator) => {
   });
 };
 
-// src/shared/tmdb.js
-var DEFAULT_TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
-function getTmdbApiKey() {
+// src/shared/http.js
+var DEFAULT_TIMEOUT_MS = 15e3;
+function timeoutSignal(ms = DEFAULT_TIMEOUT_MS) {
   try {
-    const injected = typeof globalThis !== "undefined" ? globalThis.TMDB_API_KEY : "";
-    if (injected)
-      return String(injected).trim();
+    if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
+      return AbortSignal.timeout(ms);
+    }
   } catch (e) {
   }
-  return DEFAULT_TMDB_API_KEY;
+  return void 0;
 }
-var DEFAULT_TIMEOUT_MS = 15e3;
 function withTimeout(promise, ms = DEFAULT_TIMEOUT_MS, label = "") {
   if (typeof setTimeout !== "function") {
     return Promise.resolve(promise);
@@ -89,11 +88,23 @@ function withTimeout(promise, ms = DEFAULT_TIMEOUT_MS, label = "") {
     }
   );
 }
+
+// src/shared/tmdb.js
+var DEFAULT_TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
+function getTmdbApiKey() {
+  try {
+    const injected = typeof globalThis !== "undefined" ? globalThis.TMDB_API_KEY : "";
+    if (injected)
+      return String(injected).trim();
+  } catch (e) {
+  }
+  return DEFAULT_TMDB_API_KEY;
+}
 function fetchJson(_0) {
   return __async(this, arguments, function* (url, options = {}) {
     const _a = options, { timeout = DEFAULT_TIMEOUT_MS } = _a, rest = __objRest(_a, ["timeout"]);
     return yield withTimeout((() => __async(this, null, function* () {
-      const response = yield fetch(url, rest);
+      const response = yield fetch(url, __spreadValues({ signal: timeoutSignal(timeout) }, rest));
       if (!response.ok) {
         throw new Error(`HTTP ${response.status} on ${url}`);
       }
@@ -145,24 +156,32 @@ var VIDLOP_ORIGIN = "https://vidlop.com";
 // src/dizifilm/utils.js
 function fetchText(_0) {
   return __async(this, arguments, function* (url, options = {}) {
-    const response = yield fetch(url, __spreadValues({
-      headers: __spreadValues(__spreadValues({}, SITE_HEADERS), options.headers || {})
-    }, options));
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status} on ${url}`);
-    }
-    return yield response.text();
+    const _a = options, { timeout = DEFAULT_TIMEOUT_MS } = _a, rest = __objRest(_a, ["timeout"]);
+    return yield withTimeout((() => __async(this, null, function* () {
+      const response = yield fetch(url, __spreadValues({
+        headers: __spreadValues(__spreadValues({}, SITE_HEADERS), rest.headers || {}),
+        signal: timeoutSignal(timeout)
+      }, rest));
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} on ${url}`);
+      }
+      return yield response.text();
+    }))(), timeout, url);
   });
 }
 function fetchJson2(_0) {
   return __async(this, arguments, function* (url, options = {}) {
-    const response = yield fetch(url, __spreadValues({
-      headers: __spreadValues(__spreadValues({}, SITE_HEADERS), options.headers || {})
-    }, options));
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status} on ${url}`);
-    }
-    return yield response.json();
+    const _a = options, { timeout = DEFAULT_TIMEOUT_MS } = _a, rest = __objRest(_a, ["timeout"]);
+    return yield withTimeout((() => __async(this, null, function* () {
+      const response = yield fetch(url, __spreadValues({
+        headers: __spreadValues(__spreadValues({}, SITE_HEADERS), rest.headers || {}),
+        signal: timeoutSignal(timeout)
+      }, rest));
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} on ${url}`);
+      }
+      return yield response.json();
+    }))(), timeout, url);
   });
 }
 var TR_ASCII_MAP = {
@@ -430,7 +449,8 @@ function extractVidlopSubtitles(videoUrl, referer) {
     const pageHtml = yield fetch(pageUrl, {
       headers: __spreadProps(__spreadValues({}, SITE_HEADERS), {
         Referer: referer || `${VIDLOP_ORIGIN}/`
-      })
+      }),
+      signal: timeoutSignal()
     }).then((r) => r.ok ? r.text() : "");
     return collectSubtitles(pageHtml).map((sub) => ({
       url: sub.url,
@@ -451,7 +471,8 @@ function extractVidlop(videoUrl, referer) {
     const pageResponse = yield fetch(pageUrl, {
       headers: __spreadProps(__spreadValues({}, SITE_HEADERS), {
         Referer: referer || `${VIDLOP_ORIGIN}/`
-      })
+      }),
+      signal: timeoutSignal()
     });
     if (!pageResponse.ok) {
       throw new Error(`HTTP ${pageResponse.status} on ${pageUrl}`);
@@ -468,7 +489,8 @@ function extractVidlop(videoUrl, referer) {
           "X-Requested-With": "XMLHttpRequest",
           "Content-Type": "application/x-www-form-urlencoded"
         }), cookie ? { Cookie: cookie } : {}),
-        body
+        body,
+        signal: timeoutSignal()
       }
     );
     if (!apiResponse.ok) {
