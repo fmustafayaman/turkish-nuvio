@@ -3,6 +3,17 @@ import { DOMAIN_CANDIDATES } from './constants.js';
 import { fetchText, fetchJson, titlesMatch, normalizeTitle } from './utils.js';
 import { parseRscPayload, parseTmdbId, parseMovieParts, parseEpisodeEmbeds } from './rsc.js';
 import { extractVidlop, extractVidlopSubtitles } from './vidlop.js';
+import { extractBepeak, extractBepeakSubtitles, isBepeakUrl } from './bepeak.js';
+
+// Part URL'ine göre doğru host extractor'ını seç. dizifilm zamanla farklı
+// embed host'ları kullanıyor (vidlop.com/video/ → vidmixi.com/embed/ ...).
+function extractHost(url, referer) {
+    return isBepeakUrl(url) ? extractBepeak(url, referer) : extractVidlop(url, referer);
+}
+
+function extractHostSubtitles(url, referer) {
+    return isBepeakUrl(url) ? extractBepeakSubtitles(url, referer) : extractVidlopSubtitles(url, referer);
+}
 
 function expectedContentType(mediaType) {
     return mediaType === 'tv' ? 'series' : 'movie';
@@ -174,7 +185,7 @@ async function getStreams(tmdbId, mediaType = 'movie', season = 1, episode = 1) 
         for (const part of resolved.parts) {
             let hostStreams = [];
             try {
-                hostStreams = await extractVidlop(part.url, resolved.referer);
+                hostStreams = await extractHost(part.url, resolved.referer);
             } catch {
                 hostStreams = [];
             }
@@ -216,7 +227,7 @@ async function getSubtitles(tmdbId, mediaType = 'movie', season = 1, episode = 1
         for (const part of resolved.parts) {
             let partSubs = [];
             try {
-                partSubs = await extractVidlopSubtitles(part.url, resolved.referer);
+                partSubs = await extractHostSubtitles(part.url, resolved.referer);
             } catch {
                 partSubs = [];
             }

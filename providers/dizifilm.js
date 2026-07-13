@@ -1,6 +1,6 @@
 /**
  * dizifilm - Built from src/dizifilm/
- * Generated: 2026-07-13T10:24:45.545Z
+ * Generated: 2026-07-13T10:38:59.653Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -285,13 +285,16 @@ function parseTmdbId(payload) {
     return null;
   return match[1] || match[2];
 }
+function isPlayableEmbed(url) {
+  return /^https?:\/\//i.test(url) && /\/(embed|video)\/[^"'\s]+/i.test(url);
+}
 function parseMovieParts(payload) {
   const match = /"parts":(\[[^\]]*\])/.exec(payload || "");
   if (!match)
     return [];
   try {
     const parts = JSON.parse(match[1]);
-    return (parts || []).filter((p) => p && p.url && /vidlop\.com\/video\//i.test(p.url)).map((p) => ({
+    return (parts || []).filter((p) => p && p.url && isPlayableEmbed(String(p.url).replace(/\\\//g, "/"))).map((p) => ({
       title: String(p.title || "Tek Part").trim(),
       url: String(p.url).replace(/\\\//g, "/"),
       language: String(p.language || "T\xFCrk\xE7e").trim(),
@@ -299,7 +302,7 @@ function parseMovieParts(payload) {
     }));
   } catch (e) {
     const parts = [];
-    const re = /"url":"(https:\/\/vidlop\.com\/video\/[^"]+)","language":"([^"]*)"/g;
+    const re = /"url":"(https?:(?:\\\/|\/)[^"]*?(?:\\\/|\/)(?:embed|video)(?:\\\/|\/)[^"]+)","language":"([^"]*)"/g;
     let m;
     while ((m = re.exec(payload)) !== null) {
       parts.push({
@@ -315,14 +318,12 @@ function parseMovieParts(payload) {
 function parseEpisodeEmbeds(payload) {
   const urls = [];
   for (const key of ["embed_player_url_1", "embed_player_url_2"]) {
-    const match = new RegExp(`"${key}":"(https:\\\\/\\\\/vidlop\\.com\\\\/video\\\\/[^"]+)"`).exec(payload || "");
+    const match = new RegExp(`"${key}":"(https?:(?:\\\\/|/)[^"]+)"`).exec(payload || "");
     if (match) {
-      urls.push(match[1].replace(/\\\//g, "/"));
-      continue;
+      const url = match[1].replace(/\\\//g, "/");
+      if (isPlayableEmbed(url))
+        urls.push(url);
     }
-    const plain = new RegExp(`"${key}":"(https://vidlop\\.com/video/[^"]+)"`).exec(payload || "");
-    if (plain)
-      urls.push(plain[1]);
   }
   return urls;
 }
@@ -533,7 +534,440 @@ function extractVidlop(videoUrl, referer) {
   });
 }
 
+// src/shared/base64.js
+var CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
+function atobPolyfill(input) {
+  let str = String(input).replace(/[=]+$/, "");
+  if (str.length % 4 === 1)
+    return "";
+  let output = "";
+  for (let bc = 0, bs = 0, buffer, i = 0; buffer = str.charAt(i++); ~buffer && (bs = bc % 4 ? bs * 64 + buffer : buffer, bc++ % 4) ? output += String.fromCharCode(255 & bs >> (-2 * bc & 6)) : 0) {
+    buffer = CHARS.indexOf(buffer);
+  }
+  return output;
+}
+function decodeBase64(input) {
+  if (typeof atob === "function") {
+    try {
+      return atob(input);
+    } catch (e) {
+      return atobPolyfill(input);
+    }
+  }
+  return atobPolyfill(input);
+}
+function decodeBase64Bytes(input) {
+  const decoded = decodeBase64(input);
+  const bytes = new Uint8Array(decoded.length);
+  for (let i = 0; i < decoded.length; i++) {
+    bytes[i] = decoded.charCodeAt(i);
+  }
+  return bytes;
+}
+
+// src/dizifilm/bepeak.js
+function md5(bytes) {
+  function rol(x, c) {
+    return x << c | x >>> 32 - c;
+  }
+  function add(a, b) {
+    return a + b & 4294967295;
+  }
+  const s = [
+    7,
+    12,
+    17,
+    22,
+    7,
+    12,
+    17,
+    22,
+    7,
+    12,
+    17,
+    22,
+    7,
+    12,
+    17,
+    22,
+    5,
+    9,
+    14,
+    20,
+    5,
+    9,
+    14,
+    20,
+    5,
+    9,
+    14,
+    20,
+    5,
+    9,
+    14,
+    20,
+    4,
+    11,
+    16,
+    23,
+    4,
+    11,
+    16,
+    23,
+    4,
+    11,
+    16,
+    23,
+    4,
+    11,
+    16,
+    23,
+    6,
+    10,
+    15,
+    21,
+    6,
+    10,
+    15,
+    21,
+    6,
+    10,
+    15,
+    21,
+    6,
+    10,
+    15,
+    21
+  ];
+  const K = [];
+  for (let i = 0; i < 64; i++) {
+    K[i] = Math.floor(Math.abs(Math.sin(i + 1)) * 4294967296) & 4294967295;
+  }
+  const msgLen = bytes.length;
+  const bitLen = msgLen * 8;
+  let padded = msgLen + 1;
+  while (padded % 64 !== 56)
+    padded++;
+  const buf = new Uint8Array(padded + 8);
+  buf.set(bytes);
+  buf[msgLen] = 128;
+  for (let i = 0; i < 8; i++) {
+    buf[padded + i] = bitLen / Math.pow(2, 8 * i) & 255;
+  }
+  let a0 = 1732584193, b0 = 4023233417, c0 = 2562383102, d0 = 271733878;
+  for (let off = 0; off < buf.length; off += 64) {
+    const M = [];
+    for (let i = 0; i < 16; i++) {
+      M[i] = buf[off + i * 4] | buf[off + i * 4 + 1] << 8 | buf[off + i * 4 + 2] << 16 | buf[off + i * 4 + 3] << 24;
+    }
+    let A = a0, B = b0, C = c0, D = d0;
+    for (let i = 0; i < 64; i++) {
+      let F, g;
+      if (i < 16) {
+        F = B & C | ~B & D;
+        g = i;
+      } else if (i < 32) {
+        F = D & B | ~D & C;
+        g = (5 * i + 1) % 16;
+      } else if (i < 48) {
+        F = B ^ C ^ D;
+        g = (3 * i + 5) % 16;
+      } else {
+        F = C ^ (B | ~D);
+        g = 7 * i % 16;
+      }
+      F = add(add(add(F, A), K[i]), M[g]);
+      A = D;
+      D = C;
+      C = B;
+      B = add(B, rol(F, s[i]));
+    }
+    a0 = add(a0, A);
+    b0 = add(b0, B);
+    c0 = add(c0, C);
+    d0 = add(d0, D);
+  }
+  const out = new Uint8Array(16);
+  [a0, b0, c0, d0].forEach((v, i) => {
+    out[i * 4] = v & 255;
+    out[i * 4 + 1] = v >>> 8 & 255;
+    out[i * 4 + 2] = v >>> 16 & 255;
+    out[i * 4 + 3] = v >>> 24 & 255;
+  });
+  return out;
+}
+function evpBytesToKey(passBytes, saltBytes, keyLen, ivLen) {
+  const target = keyLen + ivLen;
+  let derived = new Uint8Array(0);
+  let prev = new Uint8Array(0);
+  while (derived.length < target) {
+    const input = new Uint8Array(prev.length + passBytes.length + saltBytes.length);
+    input.set(prev, 0);
+    input.set(passBytes, prev.length);
+    input.set(saltBytes, prev.length + passBytes.length);
+    prev = md5(input);
+    const merged = new Uint8Array(derived.length + prev.length);
+    merged.set(derived, 0);
+    merged.set(prev, derived.length);
+    derived = merged;
+  }
+  return { key: derived.slice(0, keyLen), iv: derived.slice(keyLen, keyLen + ivLen) };
+}
+var SBOX = new Uint8Array(256);
+var INV_SBOX = new Uint8Array(256);
+(function initSbox() {
+  let p = 1, q = 1;
+  do {
+    p = p ^ p << 1 ^ (p & 128 ? 283 : 0);
+    p &= 255;
+    q ^= q << 1;
+    q ^= q << 2;
+    q ^= q << 4;
+    q &= 255;
+    if (q & 128)
+      q ^= 9;
+    const xformed = q ^ rotl8(q, 1) ^ rotl8(q, 2) ^ rotl8(q, 3) ^ rotl8(q, 4);
+    SBOX[p] = (xformed ^ 99) & 255;
+  } while (p !== 1);
+  SBOX[0] = 99;
+  for (let i = 0; i < 256; i++)
+    INV_SBOX[SBOX[i]] = i;
+  function rotl8(x, shift) {
+    return (x << shift | x >>> 8 - shift) & 255;
+  }
+})();
+function mul(a, b) {
+  let r = 0;
+  for (let i = 0; i < 8; i++) {
+    if (b & 1)
+      r ^= a;
+    const hi = a & 128;
+    a = a << 1 & 255;
+    if (hi)
+      a ^= 27;
+    b >>= 1;
+  }
+  return r & 255;
+}
+function expandKey(key) {
+  const Nk = 8, Nr = 14, Nb = 4;
+  const w = new Array(Nb * (Nr + 1));
+  for (let i = 0; i < Nk; i++) {
+    w[i] = [key[4 * i], key[4 * i + 1], key[4 * i + 2], key[4 * i + 3]];
+  }
+  const rcon = [1, 2, 4, 8, 16, 32, 64, 128, 27, 54, 108, 216, 171, 77];
+  for (let i = Nk; i < Nb * (Nr + 1); i++) {
+    let temp = w[i - 1].slice();
+    if (i % Nk === 0) {
+      temp = [temp[1], temp[2], temp[3], temp[0]].map((b) => SBOX[b]);
+      temp[0] ^= rcon[i / Nk - 1];
+    } else if (i % Nk === 4) {
+      temp = temp.map((b) => SBOX[b]);
+    }
+    w[i] = w[i - Nk].map((b, j) => b ^ temp[j]);
+  }
+  return w;
+}
+function decryptBlock(block, w) {
+  const Nr = 14, Nb = 4;
+  let state = [];
+  for (let i = 0; i < 16; i++)
+    state[i] = block[i];
+  function addRoundKey(round) {
+    for (let c = 0; c < Nb; c++) {
+      for (let r = 0; r < 4; r++) {
+        state[r + 4 * c] ^= w[round * Nb + c][r];
+      }
+    }
+  }
+  function invShiftRows() {
+    const t = state.slice();
+    for (let r = 1; r < 4; r++) {
+      for (let c = 0; c < 4; c++) {
+        state[r + 4 * ((c + r) % 4)] = t[r + 4 * c];
+      }
+    }
+  }
+  function invSubBytes() {
+    for (let i = 0; i < 16; i++)
+      state[i] = INV_SBOX[state[i]];
+  }
+  function invMixColumns() {
+    for (let c = 0; c < 4; c++) {
+      const s0 = state[4 * c], s1 = state[4 * c + 1], s2 = state[4 * c + 2], s3 = state[4 * c + 3];
+      state[4 * c] = mul(s0, 14) ^ mul(s1, 11) ^ mul(s2, 13) ^ mul(s3, 9);
+      state[4 * c + 1] = mul(s0, 9) ^ mul(s1, 14) ^ mul(s2, 11) ^ mul(s3, 13);
+      state[4 * c + 2] = mul(s0, 13) ^ mul(s1, 9) ^ mul(s2, 14) ^ mul(s3, 11);
+      state[4 * c + 3] = mul(s0, 11) ^ mul(s1, 13) ^ mul(s2, 9) ^ mul(s3, 14);
+    }
+  }
+  addRoundKey(Nr);
+  for (let round = Nr - 1; round >= 1; round--) {
+    invShiftRows();
+    invSubBytes();
+    addRoundKey(round);
+    invMixColumns();
+  }
+  invShiftRows();
+  invSubBytes();
+  addRoundKey(0);
+  return state;
+}
+function aesCbcDecrypt(key, iv, cipher) {
+  const w = expandKey(key);
+  const out = new Uint8Array(cipher.length);
+  let prev = iv;
+  for (let off = 0; off < cipher.length; off += 16) {
+    const block = cipher.slice(off, off + 16);
+    const dec = decryptBlock(block, w);
+    for (let i = 0; i < 16; i++)
+      out[off + i] = dec[i] ^ prev[i];
+    prev = block;
+  }
+  const pad = out[out.length - 1];
+  if (pad > 0 && pad <= 16)
+    return out.slice(0, out.length - pad);
+  return out;
+}
+function utf8Bytes(str) {
+  const out = [];
+  for (let i = 0; i < str.length; i++) {
+    let c = str.charCodeAt(i);
+    if (c < 128)
+      out.push(c);
+    else if (c < 2048) {
+      out.push(192 | c >> 6, 128 | c & 63);
+    } else {
+      out.push(224 | c >> 12, 128 | c >> 6 & 63, 128 | c & 63);
+    }
+  }
+  return new Uint8Array(out);
+}
+function hexBytes(hex) {
+  const clean = String(hex || "").replace(/[^0-9a-fA-F]/g, "");
+  const out = new Uint8Array(clean.length / 2);
+  for (let i = 0; i < out.length; i++)
+    out[i] = parseInt(clean.substr(i * 2, 2), 16);
+  return out;
+}
+function bytesToUtf8(bytes) {
+  let out = "";
+  for (let i = 0; i < bytes.length; ) {
+    const b = bytes[i];
+    if (b < 128) {
+      out += String.fromCharCode(b);
+      i += 1;
+    } else if (b < 224) {
+      out += String.fromCharCode((b & 31) << 6 | bytes[i + 1] & 63);
+      i += 2;
+    } else {
+      out += String.fromCharCode((b & 15) << 12 | (bytes[i + 1] & 63) << 6 | bytes[i + 2] & 63);
+      i += 3;
+    }
+  }
+  return out;
+}
+function decryptBePlayer(passphrase, setJson) {
+  let parsed;
+  try {
+    parsed = JSON.parse(setJson);
+  } catch (e) {
+    return null;
+  }
+  if (!parsed || !parsed.ct || !parsed.s)
+    return null;
+  const cipher = decodeBase64Bytes(parsed.ct);
+  const salt = hexBytes(parsed.s);
+  const pass = utf8Bytes(passphrase);
+  const { key, iv } = evpBytesToKey(pass, salt, 32, 16);
+  try {
+    const plain = aesCbcDecrypt(key, iv, cipher);
+    return bytesToUtf8(plain);
+  } catch (e) {
+    return null;
+  }
+}
+function isBepeakUrl(url) {
+  return /\/embed\/[0-9a-f]{16,}/i.test(String(url || ""));
+}
+function originOf(url) {
+  const m = String(url || "").match(/^(https?:\/\/[^/]+)/i);
+  return m ? m[1] : "";
+}
+function fetchEmbedSettings(embedUrl, referer) {
+  return __async(this, null, function* () {
+    const origin = originOf(embedUrl);
+    const response = yield fetch(embedUrl, {
+      headers: __spreadProps(__spreadValues({}, SITE_HEADERS), { Referer: referer || `${origin}/` }),
+      signal: timeoutSignal()
+    });
+    if (!response.ok)
+      throw new Error(`HTTP ${response.status} on ${embedUrl}`);
+    const html = yield response.text();
+    const match = /bePlayer\(\s*'([^']+)'\s*,\s*'([\s\S]*?)'\s*\)/.exec(html);
+    if (!match)
+      return null;
+    const decrypted = decryptBePlayer(match[1], match[2]);
+    if (!decrypted)
+      return null;
+    let settings;
+    try {
+      settings = JSON.parse(decrypted);
+    } catch (e) {
+      return null;
+    }
+    return { settings, origin };
+  });
+}
+function mapSubtitles(strSubtitles, origin) {
+  return (strSubtitles || []).map((sub) => {
+    if (!sub || !sub.file)
+      return null;
+    let url = String(sub.file).replace(/\\\//g, "/");
+    if (/^\//.test(url))
+      url = `${origin}${url}`;
+    if (!/^https?:\/\//.test(url))
+      return null;
+    const label = String(sub.label || sub.language || "Altyaz\u0131").trim();
+    const raw = String(sub.language || sub.label || "").toLowerCase();
+    const lang = /tr|tur|türk|turk/.test(raw) ? "tr" : /en|eng|ing/.test(raw) ? "en" : raw.slice(0, 2) || "und";
+    return { url, lang, label, language: label, name: label, format: /\.srt(\?|$)/i.test(url) ? "srt" : "vtt" };
+  }).filter(Boolean);
+}
+function extractBepeak(embedUrl, referer) {
+  return __async(this, null, function* () {
+    const result = yield fetchEmbedSettings(embedUrl, referer);
+    if (!result)
+      return [];
+    const { settings, origin } = result;
+    let streamUrl = String(settings.video_location || "").replace(/\\\//g, "/");
+    if (!streamUrl || !/^https?:\/\//.test(streamUrl))
+      return [];
+    return [{
+      url: streamUrl,
+      host: "Bepeak",
+      type: "m3u8",
+      headers: { Referer: `${origin}/`, Origin: origin },
+      subtitles: mapSubtitles(settings.strSubtitles, origin)
+    }];
+  });
+}
+function extractBepeakSubtitles(embedUrl, referer) {
+  return __async(this, null, function* () {
+    const result = yield fetchEmbedSettings(embedUrl, referer);
+    if (!result)
+      return [];
+    return mapSubtitles(result.settings.strSubtitles, result.origin);
+  });
+}
+
 // src/dizifilm/index.js
+function extractHost(url, referer) {
+  return isBepeakUrl(url) ? extractBepeak(url, referer) : extractVidlop(url, referer);
+}
+function extractHostSubtitles(url, referer) {
+  return isBepeakUrl(url) ? extractBepeakSubtitles(url, referer) : extractVidlopSubtitles(url, referer);
+}
 function expectedContentType(mediaType) {
   return mediaType === "tv" ? "series" : "movie";
 }
@@ -715,7 +1149,7 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
       for (const part of resolved.parts) {
         let hostStreams = [];
         try {
-          hostStreams = yield extractVidlop(part.url, resolved.referer);
+          hostStreams = yield extractHost(part.url, resolved.referer);
         } catch (e) {
           hostStreams = [];
         }
@@ -753,7 +1187,7 @@ function getSubtitles(tmdbId, mediaType = "movie", season = 1, episode = 1) {
       for (const part of resolved.parts) {
         let partSubs = [];
         try {
-          partSubs = yield extractVidlopSubtitles(part.url, resolved.referer);
+          partSubs = yield extractHostSubtitles(part.url, resolved.referer);
         } catch (e) {
           partSubs = [];
         }

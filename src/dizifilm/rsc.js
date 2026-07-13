@@ -26,6 +26,13 @@ export function parseTmdbId(payload) {
     return match[1] || match[2];
 }
 
+// Bir part URL'inin oynatılabilir bir embed host'una işaret edip etmediği.
+// Host bağımsız: dizifilm zamanla vidlop.com/video/ → vidmixi.com/embed/ gibi
+// host değiştiriyor, o yüzden belirli bir domain'e bağlanmıyoruz.
+function isPlayableEmbed(url) {
+    return /^https?:\/\//i.test(url) && /\/(embed|video)\/[^"'\s]+/i.test(url);
+}
+
 export function parseMovieParts(payload) {
     const match = /"parts":(\[[^\]]*\])/.exec(payload || '');
     if (!match) return [];
@@ -33,7 +40,7 @@ export function parseMovieParts(payload) {
     try {
         const parts = JSON.parse(match[1]);
         return (parts || [])
-            .filter(p => p && p.url && /vidlop\.com\/video\//i.test(p.url))
+            .filter(p => p && p.url && isPlayableEmbed(String(p.url).replace(/\\\//g, '/')))
             .map(p => ({
                 title: String(p.title || 'Tek Part').trim(),
                 url: String(p.url).replace(/\\\//g, '/'),
@@ -42,7 +49,7 @@ export function parseMovieParts(payload) {
             }));
     } catch {
         const parts = [];
-        const re = /"url":"(https:\/\/vidlop\.com\/video\/[^"]+)","language":"([^"]*)"/g;
+        const re = /"url":"(https?:(?:\\\/|\/)[^"]*?(?:\\\/|\/)(?:embed|video)(?:\\\/|\/)[^"]+)","language":"([^"]*)"/g;
         let m;
         while ((m = re.exec(payload)) !== null) {
             parts.push({
@@ -59,13 +66,11 @@ export function parseMovieParts(payload) {
 export function parseEpisodeEmbeds(payload) {
     const urls = [];
     for (const key of ['embed_player_url_1', 'embed_player_url_2']) {
-        const match = new RegExp(`"${key}":"(https:\\\\/\\\\/vidlop\\.com\\\\/video\\\\/[^"]+)"`).exec(payload || '');
+        const match = new RegExp(`"${key}":"(https?:(?:\\\\/|/)[^"]+)"`).exec(payload || '');
         if (match) {
-            urls.push(match[1].replace(/\\\//g, '/'));
-            continue;
+            const url = match[1].replace(/\\\//g, '/');
+            if (isPlayableEmbed(url)) urls.push(url);
         }
-        const plain = new RegExp(`"${key}":"(https://vidlop\\.com/video/[^"]+)"`).exec(payload || '');
-        if (plain) urls.push(plain[1]);
     }
     return urls;
 }
