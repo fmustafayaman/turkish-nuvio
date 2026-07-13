@@ -1,6 +1,6 @@
 /**
  * dizifilm - Built from src/dizifilm/
- * Generated: 2026-07-13T10:38:59.653Z
+ * Generated: 2026-07-13T10:56:16.616Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -1140,6 +1140,7 @@ function resolveTarget(tmdbId, mediaType, season, episode) {
 function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
   return __async(this, null, function* () {
     try {
+      console.log(`[Dizifilm v1.1.0] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
       const resolved = yield resolveTarget(tmdbId, mediaType, season, episode);
       if (!resolved)
         return [];

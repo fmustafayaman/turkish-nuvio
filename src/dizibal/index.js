@@ -257,6 +257,7 @@ async function resolveTarget(tmdbId, mediaType, season, episode) {
 
 async function getStreams(tmdbId, mediaType = 'movie', season = 1, episode = 1) {
     try {
+        console.log(`[Dizibal v1.1.0] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
         const resolved = await resolveTarget(tmdbId, mediaType, season, episode);
         if (!resolved) return [];
 

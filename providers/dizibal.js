@@ -1,6 +1,6 @@
 /**
  * dizibal - Built from src/dizibal/
- * Generated: 2026-07-13T10:24:45.543Z
+ * Generated: 2026-07-13T10:56:16.614Z
  */
 var __defProp = Object.defineProperty;
 var __getOwnPropSymbols = Object.getOwnPropertySymbols;
@@ -405,6 +405,7 @@ function resolveTarget(tmdbId, mediaType, season, episode) {
 function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
   return __async(this, null, function* () {
     try {
+      console.log(`[Dizibal v1.1.0] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
       const resolved = yield resolveTarget(tmdbId, mediaType, season, episode);
       if (!resolved)
         return [];

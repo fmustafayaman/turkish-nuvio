@@ -1,6 +1,6 @@
 /**
  * animecix - Built from src/animecix/
- * Generated: 2026-07-13T10:24:45.536Z
+ * Generated: 2026-07-13T10:56:16.588Z
  */
 var __defProp = Object.defineProperty;
 var __getOwnPropSymbols = Object.getOwnPropertySymbols;
@@ -474,7 +474,7 @@ function resolveSeries(tmdbId, mediaType) {
 function getStreams(tmdbId, mediaType = "tv", season = 1, episode = 1) {
   return __async(this, null, function* () {
     try {
-      console.log(`[Animecix] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
+      console.log(`[Animecix v1.1.0] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
       const resolved = yield resolveSeries(tmdbId, mediaType);
       if (!resolved)
         return [];
