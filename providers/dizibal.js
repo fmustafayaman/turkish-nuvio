@@ -1,6 +1,6 @@
 /**
  * dizibal - Built from src/dizibal/
- * Generated: 2026-07-13T12:46:02.362Z
+ * Generated: 2026-07-13T12:56:51.418Z
  */
 var __defProp = Object.defineProperty;
 var __getOwnPropSymbols = Object.getOwnPropertySymbols;
@@ -200,6 +200,32 @@ function buildMpvEdlUrl(videoUrl, subtitles) {
     edl += ";!new_stream;!no_clip;!delay_open,media_type=sub,codec=" + subCodec(sub) + ";!track_meta,title=" + title + ",lang=" + lang + ";" + edlQuote(sub.url);
   }
   return edl;
+}
+function detectHlsQuality(masterText) {
+  const text = String(masterText || "");
+  let maxH = 0;
+  const re = /RESOLUTION=(\d+)x(\d+)/gi;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const w = parseInt(m[1], 10);
+    const h = parseInt(m[2], 10);
+    const eq = Math.max(h, Math.round(w * 9 / 16));
+    if (eq > maxH)
+      maxH = eq;
+  }
+  if (!maxH)
+    return null;
+  if (maxH >= 2160)
+    return "4K";
+  if (maxH >= 1440)
+    return "1440p";
+  if (maxH >= 1080)
+    return "1080p";
+  if (maxH >= 720)
+    return "720p";
+  if (maxH >= 480)
+    return "480p";
+  return `${maxH}p`;
 }
 
 // src/dizibal/index.js
@@ -461,7 +487,7 @@ function resolveTarget(tmdbId, mediaType, season, episode) {
 function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
   return __async(this, null, function* () {
     try {
-      console.log(`[Dizibal v1.2.2] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
+      console.log(`[Dizibal v1.2.3] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
       const resolved = yield resolveTarget(tmdbId, mediaType, season, episode);
       if (!resolved)
         return [];
@@ -471,18 +497,24 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
       const referer = extracted.embedOrigin ? `${extracted.embedOrigin}/` : `${BASE_URL}/`;
       const subtitles = extracted.subtitles.map((sub) => normalizeSubtitle(sub, referer)).filter(Boolean);
       let streamUrl = extracted.url;
+      let quality = "Auto";
+      try {
+        quality = detectHlsQuality(yield fetchText(extracted.url, referer)) || "Auto";
+      } catch (e) {
+        quality = "Auto";
+      }
       if (readSetting("embedSubs") && subtitles.length) {
         const edl = buildMpvEdlUrl(extracted.url, subtitles);
         if (edl) {
           streamUrl = edl;
-          console.log(`[Dizibal v1.2.2] embedSubs: ${subtitles.length} altyaz\u0131 edl:// ile birle\u015Ftirildi`);
+          console.log(`[Dizibal v1.2.3] embedSubs: ${subtitles.length} altyaz\u0131 edl:// ile birle\u015Ftirildi`);
         }
       }
       return [{
-        name: "Dizibal",
+        name: `Dizibal ${quality}`.trim(),
         title: resolved.mediaTitle,
         url: streamUrl,
-        quality: "Auto",
+        quality,
         provider: "dizibal",
         type: "m3u8",
         headers: streamHeaders(referer),

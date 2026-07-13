@@ -1,6 +1,6 @@
 import { getTmdbInfo } from '../shared/tmdb.js';
 import { withTimeout, timeoutSignal, DEFAULT_TIMEOUT_MS } from '../shared/http.js';
-import { buildMpvEdlUrl } from '../shared/hls.js';
+import { buildMpvEdlUrl, detectHlsQuality } from '../shared/hls.js';
 
 // Kullanıcı ayarı: desktop'ta MPV external altyazıyı yüklemediği için (PR #168
 // merge edilmedi) video + altyazıyı mpv edl:// ile birleştirme modu. Varsayılan
@@ -271,7 +271,7 @@ async function resolveTarget(tmdbId, mediaType, season, episode) {
 
 async function getStreams(tmdbId, mediaType = 'movie', season = 1, episode = 1) {
     try {
-        console.log(`[Dizibal v1.2.2] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
+        console.log(`[Dizibal v1.2.3] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
         const resolved = await resolveTarget(tmdbId, mediaType, season, episode);
         if (!resolved) return [];
 
@@ -286,20 +286,29 @@ async function getStreams(tmdbId, mediaType = 'movie', season = 1, episode = 1) 
 
         let streamUrl = extracted.url;
 
+        // Master'daki çözünürlükten kalite etiketini çıkar (kaynakta genelde tek
+        // rendition var; artırma değil, sadece gerçek kaliteyi göstermek için).
+        let quality = 'Auto';
+        try {
+            quality = detectHlsQuality(await fetchText(extracted.url, referer)) || 'Auto';
+        } catch {
+            quality = 'Auto';
+        }
+
         // Desktop altyazı modu: video + altyazıları mpv edl:// ile tek URL'de birleştir.
         if (readSetting('embedSubs') && subtitles.length) {
             const edl = buildMpvEdlUrl(extracted.url, subtitles);
             if (edl) {
                 streamUrl = edl;
-                console.log(`[Dizibal v1.2.2] embedSubs: ${subtitles.length} altyazı edl:// ile birleştirildi`);
+                console.log(`[Dizibal v1.2.3] embedSubs: ${subtitles.length} altyazı edl:// ile birleştirildi`);
             }
         }
 
         return [{
-            name: 'Dizibal',
+            name: `Dizibal ${quality}`.trim(),
             title: resolved.mediaTitle,
             url: streamUrl,
-            quality: 'Auto',
+            quality,
             provider: 'dizibal',
             type: 'm3u8',
             headers: streamHeaders(referer),

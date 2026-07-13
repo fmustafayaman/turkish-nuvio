@@ -65,6 +65,30 @@ export function buildMpvEdlUrl(videoUrl, subtitles) {
     return edl;
 }
 
+// HLS master metnindeki en yüksek RESOLUTION'dan kalite etiketi ("1080p" vb.)
+// çıkarır. Bulamazsa null döner (çağıran 'Auto' kullanır).
+export function detectHlsQuality(masterText) {
+    const text = String(masterText || '');
+    let maxH = 0;
+    const re = /RESOLUTION=(\d+)x(\d+)/gi;
+    let m;
+    while ((m = re.exec(text)) !== null) {
+        const w = parseInt(m[1], 10);
+        const h = parseInt(m[2], 10);
+        // Sinematik (ör. 1920x872) içerikte yükseklik düşük olabilir; genişliğin
+        // 16:9 karşılığı yüksekliği ile gerçek yüksekliğin büyüğünü al.
+        const eq = Math.max(h, Math.round(w * 9 / 16));
+        if (eq > maxH) maxH = eq;
+    }
+    if (!maxH) return null;
+    if (maxH >= 2160) return '4K';
+    if (maxH >= 1440) return '1440p';
+    if (maxH >= 1080) return '1080p';
+    if (maxH >= 720) return '720p';
+    if (maxH >= 480) return '480p';
+    return `${maxH}p`;
+}
+
 // Kullanıcının "embedSubs" ayarı açıksa videoyu altyazılarla edl:// olarak
 // birleştirir, değilse url'yi olduğu gibi döndürür. Ayar globalThis.SCRAPER_SETTINGS
 // üzerinden gelir (Nuvio her plugin çalıştırmasında enjekte eder).
