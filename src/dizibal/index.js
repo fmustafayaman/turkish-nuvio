@@ -160,6 +160,14 @@ async function searchContent(tmdbId, type, targets, year) {
             if (!item || !item._id || seen.has(item._id)) continue;
             seen.add(item._id);
 
+            // Aynı başlığın farklı yapımlarını ayır (ör. One Piece anime 1999 vs
+            // Netflix canlı-aksiyon 2023). TMDB id birebir eşleşmiyorsa ve yıllar
+            // 1'den fazla farklıysa bu FARKLI bir yapımdır — yanlış içeriğe
+            // fallback etmemek için ele.
+            const idMatch = String(item.id || '') === String(tmdbId);
+            const iy = itemYear(item, type);
+            if (!idMatch && year && iy && Math.abs(Number(iy) - Number(year)) > 1) continue;
+
             const score = scoreItem(item, tmdbId, targets, year, type);
             if (score <= 0) continue;
             candidates.push({ item, score });
@@ -271,7 +279,7 @@ async function resolveTarget(tmdbId, mediaType, season, episode) {
 
 async function getStreams(tmdbId, mediaType = 'movie', season = 1, episode = 1) {
     try {
-        console.log(`[Dizibal v1.2.3] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
+        console.log(`[Dizibal v1.2.4] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
         const resolved = await resolveTarget(tmdbId, mediaType, season, episode);
         if (!resolved) return [];
 
@@ -300,7 +308,7 @@ async function getStreams(tmdbId, mediaType = 'movie', season = 1, episode = 1) 
             const edl = buildMpvEdlUrl(extracted.url, subtitles);
             if (edl) {
                 streamUrl = edl;
-                console.log(`[Dizibal v1.2.3] embedSubs: ${subtitles.length} altyazı edl:// ile birleştirildi`);
+                console.log(`[Dizibal v1.2.4] embedSubs: ${subtitles.length} altyazı edl:// ile birleştirildi`);
             }
         }
 

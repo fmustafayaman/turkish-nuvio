@@ -1,6 +1,6 @@
 /**
  * dizibal - Built from src/dizibal/
- * Generated: 2026-07-13T12:56:51.418Z
+ * Generated: 2026-07-13T13:10:05.610Z
  */
 var __defProp = Object.defineProperty;
 var __getOwnPropSymbols = Object.getOwnPropertySymbols;
@@ -384,6 +384,10 @@ function searchContent(tmdbId, type, targets, year) {
         if (!item || !item._id || seen.has(item._id))
           continue;
         seen.add(item._id);
+        const idMatch = String(item.id || "") === String(tmdbId);
+        const iy = itemYear(item, type);
+        if (!idMatch && year && iy && Math.abs(Number(iy) - Number(year)) > 1)
+          continue;
         const score = scoreItem(item, tmdbId, targets, year, type);
         if (score <= 0)
           continue;
@@ -487,7 +491,7 @@ function resolveTarget(tmdbId, mediaType, season, episode) {
 function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
   return __async(this, null, function* () {
     try {
-      console.log(`[Dizibal v1.2.3] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
+      console.log(`[Dizibal v1.2.4] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
       const resolved = yield resolveTarget(tmdbId, mediaType, season, episode);
       if (!resolved)
         return [];
@@ -507,7 +511,7 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
         const edl = buildMpvEdlUrl(extracted.url, subtitles);
         if (edl) {
           streamUrl = edl;
-          console.log(`[Dizibal v1.2.3] embedSubs: ${subtitles.length} altyaz\u0131 edl:// ile birle\u015Ftirildi`);
+          console.log(`[Dizibal v1.2.4] embedSubs: ${subtitles.length} altyaz\u0131 edl:// ile birle\u015Ftirildi`);
         }
       }
       return [{
