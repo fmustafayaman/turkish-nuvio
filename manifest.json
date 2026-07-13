@@ -1,12 +1,12 @@
 {
   "name": "Turkish Nuvio",
-  "version": "1.14.0",
+  "version": "1.15.0",
   "scrapers": [
     {
       "id": "animecix",
       "name": "Animecix",
       "description": "Türkçe anime kaynağı — animecix.tv",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "author": "turkish-nuvio",
       "supportedTypes": [
         "movie",
