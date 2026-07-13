@@ -1,6 +1,6 @@
 /**
  * animecix - Built from src/animecix/
- * Generated: 2026-06-29T13:01:59.552Z
+ * Generated: 2026-07-13T10:24:45.536Z
  */
 var __defProp = Object.defineProperty;
 var __getOwnPropSymbols = Object.getOwnPropertySymbols;
@@ -71,6 +71,21 @@ function timeoutSignal(ms = DEFAULT_TIMEOUT_MS) {
   try {
     if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
       return AbortSignal.timeout(ms);
+    }
+  } catch (e) {
+  }
+  try {
+    if (typeof AbortController === "function" && typeof setTimeout === "function") {
+      const controller = new AbortController();
+      const timer = setTimeout(() => {
+        try {
+          controller.abort();
+        } catch (e) {
+        }
+      }, ms);
+      if (timer && typeof timer.unref === "function")
+        timer.unref();
+      return controller.signal;
     }
   } catch (e) {
   }
@@ -406,19 +421,64 @@ function extractStreams(episodePath, animeTitle, episodeLabel) {
   });
 }
 
+// src/shared/cache.js
+function createTtlCache(defaultTtlMs = 30 * 60 * 1e3, maxEntries = 200) {
+  const store = /* @__PURE__ */ new Map();
+  function get(key) {
+    const entry = store.get(key);
+    if (!entry)
+      return void 0;
+    if (entry.expires <= Date.now()) {
+      store.delete(key);
+      return void 0;
+    }
+    return entry.value;
+  }
+  function set(key, value, ttlMs = defaultTtlMs) {
+    if (store.size >= maxEntries) {
+      const oldest = store.keys().next().value;
+      if (oldest !== void 0)
+        store.delete(oldest);
+    }
+    store.set(key, { value, expires: Date.now() + ttlMs });
+  }
+  function remember(_0, _1) {
+    return __async(this, arguments, function* (key, fn, ttlMs = defaultTtlMs, isValid = (v) => v != null) {
+      const cached = get(key);
+      if (cached !== void 0)
+        return cached;
+      const value = yield fn();
+      if (isValid(value))
+        set(key, value, ttlMs);
+      return value;
+    });
+  }
+  return { get, set, remember };
+}
+
 // src/animecix/index.js
+var resolveCache = createTtlCache(30 * 60 * 1e3, 200);
+function resolveSeries(tmdbId, mediaType) {
+  return __async(this, null, function* () {
+    return yield resolveCache.remember(`${mediaType}:${tmdbId}`, () => __async(this, null, function* () {
+      const { title, originalTitle } = yield getTmdbInfo(tmdbId, mediaType);
+      if (!title && !originalTitle)
+        return null;
+      const match = yield findByTmdbId(tmdbId, title, originalTitle, mediaType);
+      if (!match)
+        return null;
+      return { title, originalTitle, animeId: match.id, animeTitle: match.name || title };
+    }));
+  });
+}
 function getStreams(tmdbId, mediaType = "tv", season = 1, episode = 1) {
   return __async(this, null, function* () {
     try {
       console.log(`[Animecix] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
-      const { title, originalTitle } = yield getTmdbInfo(tmdbId, mediaType);
-      if (!title && !originalTitle)
+      const resolved = yield resolveSeries(tmdbId, mediaType);
+      if (!resolved)
         return [];
-      const match = yield findByTmdbId(tmdbId, title, originalTitle, mediaType);
-      if (!match)
-        return [];
-      const animeId = match.id;
-      const animeTitle = match.name || title;
+      const { animeId, animeTitle } = resolved;
       if (mediaType === "movie") {
         const episodePath = yield getMovieEpisodeUrl(animeId);
         if (!episodePath)

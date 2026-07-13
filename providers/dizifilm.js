@@ -1,6 +1,6 @@
 /**
  * dizifilm - Built from src/dizifilm/
- * Generated: 2026-06-29T12:57:07.125Z
+ * Generated: 2026-07-13T10:24:45.545Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -60,6 +60,21 @@ function timeoutSignal(ms = DEFAULT_TIMEOUT_MS) {
   try {
     if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
       return AbortSignal.timeout(ms);
+    }
+  } catch (e) {
+  }
+  try {
+    if (typeof AbortController === "function" && typeof setTimeout === "function") {
+      const controller = new AbortController();
+      const timer = setTimeout(() => {
+        try {
+          controller.abort();
+        } catch (e) {
+        }
+      }, ms);
+      if (timer && typeof timer.unref === "function")
+        timer.unref();
+      return controller.signal;
     }
   } catch (e) {
   }

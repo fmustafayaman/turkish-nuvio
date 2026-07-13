@@ -1,19 +1,33 @@
 import { getTmdbInfo, getImdbId, resolveEpisodeMapping } from './utils.js';
 import { findByTmdbId, getMovieEpisodeUrl, getEpisodeVideoUrl, getEpisodes, findEpisode } from './episodes.js';
 import { extractStreams } from './extractor.js';
+import { createTtlCache } from '../shared/cache.js';
+
+// Seri düzeyi çözümleme (TMDB başlıkları + animecix eşleşmesi) bölümden bölüme
+// değişmez; aynı IP'den tekrar tekrar aranması throttle'ı tetikleyen ana
+// upstream yüküydü. tmdbId+type başına 30 dk cache'liyoruz.
+const resolveCache = createTtlCache(30 * 60 * 1000, 200);
+
+async function resolveSeries(tmdbId, mediaType) {
+    return await resolveCache.remember(`${mediaType}:${tmdbId}`, async () => {
+        const { title, originalTitle } = await getTmdbInfo(tmdbId, mediaType);
+        if (!title && !originalTitle) return null;
+
+        const match = await findByTmdbId(tmdbId, title, originalTitle, mediaType);
+        if (!match) return null;
+
+        return { title, originalTitle, animeId: match.id, animeTitle: match.name || title };
+    });
+}
 
 async function getStreams(tmdbId, mediaType = 'tv', season = 1, episode = 1) {
     try {
         console.log(`[Animecix] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
 
-        const { title, originalTitle } = await getTmdbInfo(tmdbId, mediaType);
-        if (!title && !originalTitle) return [];
+        const resolved = await resolveSeries(tmdbId, mediaType);
+        if (!resolved) return [];
 
-        const match = await findByTmdbId(tmdbId, title, originalTitle, mediaType);
-        if (!match) return [];
-
-        const animeId = match.id;
-        const animeTitle = match.name || title;
+        const { animeId, animeTitle } = resolved;
 
         if (mediaType === 'movie') {
             const episodePath = await getMovieEpisodeUrl(animeId);

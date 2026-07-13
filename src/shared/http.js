@@ -13,12 +13,31 @@ export const DEFAULT_HEADERS = {
 // Her ikisi de ortamda yoksa zarifçe timeout'suz devam eder (çökmeden).
 export const DEFAULT_TIMEOUT_MS = 15000;
 
-// AbortSignal.timeout bu runtime'da varsa fetch'i gerçekten iptal eden bir
-// signal döndürür; yoksa undefined (fetch normal çalışır, race yedeği devreye girer).
+// Fetch'i süre dolunca GERÇEKTEN iptal eden bir signal döndürür.
+//  1) AbortSignal.timeout varsa onu kullan (tek satır).
+//  2) Yoksa elle AbortController + setTimeout ile abort et. Bu kritik: eski kod
+//     bu durumda undefined dönüyordu; timeout'a düşen istekler soketi açık
+//     bırakıyor, RN bağlantı havuzunu doldurup sonraki istekleri asıyordu
+//     (upstream throttle'landığında "uzun izleyince donma" belirtisinin asıl
+//     plugin tarafı sebebi buydu).
+//  3) AbortController da yoksa undefined (withTimeout race yedeği yine reddeder).
 export function timeoutSignal(ms = DEFAULT_TIMEOUT_MS) {
     try {
         if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
             return AbortSignal.timeout(ms);
+        }
+    } catch {
+        // ignore, elle dene
+    }
+    try {
+        if (typeof AbortController === 'function' && typeof setTimeout === 'function') {
+            const controller = new AbortController();
+            const timer = setTimeout(() => {
+                try { controller.abort(); } catch { /* ignore */ }
+            }, ms);
+            // Node'da askıda timer event loop'u açık tutmasın; RN'de no-op.
+            if (timer && typeof timer.unref === 'function') timer.unref();
+            return controller.signal;
         }
     } catch {
         // ignore
