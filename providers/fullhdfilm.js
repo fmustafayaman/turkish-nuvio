@@ -1,6 +1,6 @@
 /**
  * fullhdfilm - Built from src/fullhdfilm/
- * Generated: 2026-07-13T10:24:45.547Z
+ * Generated: 2026-07-13T12:53:00.316Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -537,6 +537,78 @@ function extractHost(embedUrl, referer) {
   });
 }
 
+// src/shared/hls.js
+function utf8ByteLength(str) {
+  let bytes = 0;
+  for (let i = 0; i < str.length; i++) {
+    const c = str.charCodeAt(i);
+    if (c < 128)
+      bytes += 1;
+    else if (c < 2048)
+      bytes += 2;
+    else if (c >= 55296 && c <= 56319) {
+      bytes += 4;
+      i++;
+    } else
+      bytes += 3;
+  }
+  return bytes;
+}
+function edlQuote(str) {
+  const s = String(str || "");
+  return `%${utf8ByteLength(s)}%${s}`;
+}
+function metaSafe(str) {
+  return String(str || "").replace(/[;,]/g, " ").trim();
+}
+function subCodec(sub) {
+  const fmt = String(sub.format || "").toLowerCase();
+  if (fmt === "srt" || /\.srt(\?|$)/i.test(sub.url || ""))
+    return "subrip";
+  return "webvtt";
+}
+function buildMpvEdlUrl(videoUrl, subtitles) {
+  const subs = (subtitles || []).filter((s) => s && s.url && /^https?:\/\//i.test(s.url));
+  if (!videoUrl || !subs.length)
+    return null;
+  subs.sort((a, b) => {
+    const at = /^tr/i.test(a.lang || a.language || "") ? 0 : 1;
+    const bt = /^tr/i.test(b.lang || b.language || "") ? 0 : 1;
+    return at - bt;
+  });
+  let edl = "edl://!no_clip;" + edlQuote(videoUrl);
+  for (const sub of subs) {
+    const lang = metaSafe(sub.lang || sub.language || "und");
+    const title = metaSafe(sub.label || sub.name || lang) || lang;
+    edl += ";!new_stream;!no_clip;!delay_open,media_type=sub,codec=" + subCodec(sub) + ";!track_meta,title=" + title + ",lang=" + lang + ";" + edlQuote(sub.url);
+  }
+  return edl;
+}
+function maybeEmbedSubsUrl(url, subtitles) {
+  let on = false;
+  try {
+    const s = typeof globalThis !== "undefined" ? globalThis.SCRAPER_SETTINGS : null;
+    on = !!(s && s.embedSubs);
+  } catch (e) {
+    on = false;
+  }
+  if (!on)
+    return url;
+  return buildMpvEdlUrl(url, subtitles) || url;
+}
+function embedSubsSettingsLayout() {
+  return [
+    { type: "header", label: "Desktop Altyaz\u0131" },
+    {
+      type: "toggle",
+      key: "embedSubs",
+      label: "Altyaz\u0131y\u0131 stream i\xE7ine g\xF6m (Desktop)",
+      description: "Nuvio Desktop (MPV) external altyaz\u0131y\u0131 y\xFCklemiyor. Bunu A\xC7ARSAN altyaz\u0131, mpv edl:// ile videonun i\xE7ine g\xF6m\xFCl\xFCr ve player men\xFCs\xFCnde g\xF6r\xFCn\xFCr. TV/Android'de gerekmez, kapal\u0131 b\u0131rak.",
+      defaultValue: false
+    }
+  ];
+}
+
 // src/fullhdfilm/index.js
 var SCX_KEYS = ["atom", "advid", "advidprox", "proton", "fast", "fastly", "tr", "en"];
 function parseSearchResults(html) {
@@ -701,15 +773,16 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
           if (!s.url || seen.has(s.url))
             continue;
           seen.add(s.url);
+          const subs = s.subtitles || [];
           streams.push({
             name: `FullHDFilm ${entry.label} \u2022 ${s.host}`,
             title: mediaTitle,
-            url: s.url,
+            url: maybeEmbedSubsUrl(s.url, subs),
             quality: "Auto",
             headers: s.headers,
             provider: "fullhdfilm",
             type: s.type,
-            subtitles: s.subtitles || []
+            subtitles: subs
           });
         }
       }
@@ -751,4 +824,9 @@ function getSubtitles(tmdbId, mediaType = "movie", season = 1, episode = 1) {
     }
   });
 }
-module.exports = { getStreams, getSubtitles };
+function onSettings() {
+  return __async(this, null, function* () {
+    return embedSubsSettingsLayout();
+  });
+}
+module.exports = { getStreams, getSubtitles, onSettings };

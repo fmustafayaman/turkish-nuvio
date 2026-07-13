@@ -64,3 +64,33 @@ export function buildMpvEdlUrl(videoUrl, subtitles) {
     }
     return edl;
 }
+
+// Kullanıcının "embedSubs" ayarı açıksa videoyu altyazılarla edl:// olarak
+// birleştirir, değilse url'yi olduğu gibi döndürür. Ayar globalThis.SCRAPER_SETTINGS
+// üzerinden gelir (Nuvio her plugin çalıştırmasında enjekte eder).
+export function maybeEmbedSubsUrl(url, subtitles) {
+    let on = false;
+    try {
+        const s = typeof globalThis !== 'undefined' ? globalThis.SCRAPER_SETTINGS : null;
+        on = !!(s && s.embedSubs);
+    } catch {
+        on = false;
+    }
+    if (!on) return url;
+    return buildMpvEdlUrl(url, subtitles) || url;
+}
+
+// Nuvio ayar diyaloğu için ortak "Desktop altyazı" toggle tanımı. Her provider
+// bunu onSettings'ten döndürür; manifest'te "hasSettings": true olmalı.
+export function embedSubsSettingsLayout() {
+    return [
+        { type: 'header', label: 'Desktop Altyazı' },
+        {
+            type: 'toggle',
+            key: 'embedSubs',
+            label: 'Altyazıyı stream içine göm (Desktop)',
+            description: 'Nuvio Desktop (MPV) external altyazıyı yüklemiyor. Bunu AÇARSAN altyazı, mpv edl:// ile videonun içine gömülür ve player menüsünde görünür. TV/Android\'de gerekmez, kapalı bırak.',
+            defaultValue: false
+        }
+    ];
+}
