@@ -1,6 +1,6 @@
 {
   "name": "Turkish Nuvio",
-  "version": "1.9.1",
+  "version": "1.9.2",
   "scrapers": [
     {
       "id": "animecix",
@@ -54,11 +54,12 @@
       "id": "dizibal",
       "name": "Dizibal",
       "description": "Türkçe dublaj/altyazılı film ve dizi kaynağı — dizibal.com",
-      "version": "1.2.1",
+      "version": "1.2.2",
       "author": "turkish-nuvio",
       "supportedTypes": ["movie", "tv"],
       "filename": "providers/dizibal.js",
       "enabled": true,
+      "hasSettings": true,
       "logo": "https://dizibal.com/favicon.ico",
       "contentLanguage": ["tr"],
       "formats": ["m3u8"],

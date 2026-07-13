@@ -271,7 +271,7 @@ async function resolveTarget(tmdbId, mediaType, season, episode) {
 
 async function getStreams(tmdbId, mediaType = 'movie', season = 1, episode = 1) {
     try {
-        console.log(`[Dizibal v1.2.1] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
+        console.log(`[Dizibal v1.2.2] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
         const resolved = await resolveTarget(tmdbId, mediaType, season, episode);
         if (!resolved) return [];
 
@@ -291,7 +291,7 @@ async function getStreams(tmdbId, mediaType = 'movie', season = 1, episode = 1) 
             const edl = buildMpvEdlUrl(extracted.url, subtitles);
             if (edl) {
                 streamUrl = edl;
-                console.log(`[Dizibal v1.2.1] embedSubs: ${subtitles.length} altyazı edl:// ile birleştirildi`);
+                console.log(`[Dizibal v1.2.2] embedSubs: ${subtitles.length} altyazı edl:// ile birleştirildi`);
             }
         }
 
