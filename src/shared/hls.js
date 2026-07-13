@@ -102,6 +102,31 @@ export function ensureHlsExtHint(url) {
     return u + (u.indexOf('?') >= 0 ? '&' : '?') + 'ext=video.m3u8';
 }
 
+// vidmixi gibi host'lar HLS master + variant + audio playlist'lerini uzantısız
+// veriyor. FFmpeg 7.0 (Nuvio Desktop) uzantısız CHILD playlist'leri HLS olarak
+// açamıyor → master açılsa bile variant takip edilemiyor (1-2 sn döngü). Çözüm:
+// master metnindeki variant (STREAM-INF sonrası URL) ve audio (EXT-X-MEDIA URI)
+// child playlist URL'lerine ".m3u8" ekle. Segment'ler (.ts içeriği) ffmpeg
+// tarafından zaten sniff'lenir, onlara dokunmuyoruz. mpv 8.1 + 7.0'da doğrulandı.
+function addM3u8Ext(u) {
+    const s = String(u || '').trim();
+    if (!s || /\.m3u8(\?|#|$)/i.test(s)) return s;
+    const q = s.search(/[?#]/);
+    return q >= 0 ? s.slice(0, q) + '.m3u8' + s.slice(q) : s + '.m3u8';
+}
+
+export function rewriteMasterChildExt(masterText) {
+    return String(masterText || '').split(/\r?\n/).map(line => {
+        if (/^#EXT-X-MEDIA/i.test(line)) {
+            return line.replace(/URI="([^"]+)"/i, (_, u) => `URI="${addM3u8Ext(u)}"`);
+        }
+        if (!line.startsWith('#') && /^https?:\/\//i.test(line.trim())) {
+            return addM3u8Ext(line);
+        }
+        return line;
+    }).join('\n');
+}
+
 // Kullanıcının "embedSubs" ayarı açıksa videoyu altyazılarla edl:// olarak
 // birleştirir, değilse url'yi olduğu gibi döndürür. Ayar globalThis.SCRAPER_SETTINGS
 // üzerinden gelir (Nuvio her plugin çalıştırmasında enjekte eder).
@@ -128,11 +153,12 @@ export function maybeEmbedSubsUrl(url, subtitles, masterText) {
         return subs.length ? (buildMpvEdlUrl(url, subs) || url) : url;
     }
 
-    // Uzantısız URL (dizifilm/vidmixi /list/): ffmpeg text/plain + uzantısız
-    // olduğu için HLS'i tanımıyor. mpv'nin memory:// protokolü içeriği sniff'leyip
-    // oynatır (ffmpeg sürümünden bağımsız). memory:// edl'e sokulamadığından bu
-    // yolda gömülü altyazı yok — öncelik oynatma.
-    if (masterText) return 'memory://' + masterText;
+    // Uzantısız URL (dizifilm/vidmixi /list/): master + child playlist'ler
+    // uzantısız olduğu için ffmpeg (özellikle 7.0) HLS'i tanımıyor/takip edemiyor.
+    // Master'ı memory:// ile ver (mpv içerik sniff'i) VE child playlist URL'lerine
+    // .m3u8 ekle ki ffmpeg 7.0 variant'ları takip edebilsin. memory:// edl'e
+    // sokulamadığından bu yolda gömülü altyazı yok — öncelik oynatma.
+    if (masterText) return 'memory://' + rewriteMasterChildExt(masterText);
     return ensureHlsExtHint(url);
 }
 

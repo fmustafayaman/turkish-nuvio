@@ -1,6 +1,6 @@
 /**
  * dizifilm - Built from src/dizifilm/
- * Generated: 2026-07-13T14:12:47.739Z
+ * Generated: 2026-07-13T14:19:05.377Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -646,6 +646,24 @@ function ensureHlsExtHint(url) {
     return u;
   return u + (u.indexOf("?") >= 0 ? "&" : "?") + "ext=video.m3u8";
 }
+function addM3u8Ext(u) {
+  const s = String(u || "").trim();
+  if (!s || /\.m3u8(\?|#|$)/i.test(s))
+    return s;
+  const q = s.search(/[?#]/);
+  return q >= 0 ? s.slice(0, q) + ".m3u8" + s.slice(q) : s + ".m3u8";
+}
+function rewriteMasterChildExt(masterText) {
+  return String(masterText || "").split(/\r?\n/).map((line) => {
+    if (/^#EXT-X-MEDIA/i.test(line)) {
+      return line.replace(/URI="([^"]+)"/i, (_, u) => `URI="${addM3u8Ext(u)}"`);
+    }
+    if (!line.startsWith("#") && /^https?:\/\//i.test(line.trim())) {
+      return addM3u8Ext(line);
+    }
+    return line;
+  }).join("\n");
+}
 function maybeEmbedSubsUrl(url, subtitles, masterText) {
   let on = false;
   try {
@@ -662,7 +680,7 @@ function maybeEmbedSubsUrl(url, subtitles, masterText) {
     return subs.length ? buildMpvEdlUrl(url, subs) || url : url;
   }
   if (masterText)
-    return "memory://" + masterText;
+    return "memory://" + rewriteMasterChildExt(masterText);
   return ensureHlsExtHint(url);
 }
 function embedSubsSettingsLayout() {
@@ -1269,7 +1287,7 @@ function resolveTarget(tmdbId, mediaType, season, episode) {
 function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
   return __async(this, null, function* () {
     try {
-      console.log(`[Dizifilm v1.4.0] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
+      console.log(`[Dizifilm v1.5.0] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
       const resolved = yield resolveTarget(tmdbId, mediaType, season, episode);
       if (!resolved)
         return [];
