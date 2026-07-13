@@ -115,6 +115,58 @@ function addM3u8Ext(u) {
     return q >= 0 ? s.slice(0, q) + '.m3u8' + s.slice(q) : s + '.m3u8';
 }
 
+// vidmixi HLS'inde video variant'ları video-only, ses AYRI rendition'da (aynı
+// segment'ler değil). ffmpeg master içindeki AUDIO grubunu mux edemiyor (ses
+// gelmiyor). Çözüm: en iyi video variant + ses rendition(lar) + altyazıyı
+// edl:// ile ayrı stream'ler olarak birleştir — hepsi .m3u8/.vtt olduğu için
+// ffmpeg 7.0 tanır. Ayrı ses yoksa null döner (çağıran memory:// kullanır).
+export function buildSplitStreamEdl(masterText, subtitles) {
+    const lines = String(masterText || '').split(/\r?\n/);
+
+    let bestVideo = null, bestBw = -1;
+    for (let i = 0; i < lines.length; i++) {
+        const m = lines[i].match(/^#EXT-X-STREAM-INF.*BANDWIDTH=(\d+)/i);
+        if (m) {
+            const url = (lines[i + 1] || '').trim();
+            if (url && !url.startsWith('#') && Number(m[1]) > bestBw) {
+                bestBw = Number(m[1]);
+                bestVideo = url;
+            }
+        }
+    }
+    if (!bestVideo) return null;
+
+    const audios = [];
+    for (const l of lines) {
+        if (!/^#EXT-X-MEDIA:TYPE=AUDIO/i.test(l)) continue;
+        const uri = (l.match(/URI="([^"]+)"/i) || [])[1];
+        if (!uri) continue;
+        const lang = (l.match(/LANGUAGE="([^"]*)"/i) || [])[1] || 'und';
+        audios.push({ lang, uri });
+    }
+    if (!audios.length) return null; // ayrı ses yok → muxed, memory:// yeterli
+
+    // Türkçe sesi öne al.
+    audios.sort((a, b) => (/tr|tur/i.test(a.lang) ? 0 : 1) - (/tr|tur/i.test(b.lang) ? 0 : 1));
+
+    let edl = 'edl://!no_clip;' + edlQuote(addM3u8Ext(bestVideo));
+    for (const a of audios) {
+        const lang = /tr|tur/i.test(a.lang) ? 'tr' : (/en|eng/i.test(a.lang) ? 'en' : metaSafe(a.lang));
+        const title = lang === 'tr' ? 'Türkçe' : (lang === 'en' ? 'English' : metaSafe(a.lang));
+        edl += ';!new_stream;!no_clip;!track_meta,title=' + title + ',lang=' + lang +
+            ';' + edlQuote(addM3u8Ext(a.uri));
+    }
+    const subs = (subtitles || []).filter(t => t && t.url && /^https?:\/\//i.test(t.url));
+    subs.sort((a, b) => (/^tr/i.test(a.lang || '') ? 0 : 1) - (/^tr/i.test(b.lang || '') ? 0 : 1));
+    for (const sub of subs) {
+        const lang = metaSafe(sub.lang || sub.language || 'und');
+        const title = metaSafe(sub.label || sub.name || lang) || lang;
+        edl += ';!new_stream;!no_clip;!delay_open,media_type=sub,codec=' + subCodec(sub) +
+            ';!track_meta,title=' + title + ',lang=' + lang + ';' + edlQuote(sub.url);
+    }
+    return edl;
+}
+
 export function rewriteMasterChildExt(masterText) {
     return String(masterText || '').split(/\r?\n/).map(line => {
         if (/^#EXT-X-MEDIA/i.test(line)) {
@@ -153,12 +205,15 @@ export function maybeEmbedSubsUrl(url, subtitles, masterText) {
         return subs.length ? (buildMpvEdlUrl(url, subs) || url) : url;
     }
 
-    // Uzantısız URL (dizifilm/vidmixi /list/): master + child playlist'ler
-    // uzantısız olduğu için ffmpeg (özellikle 7.0) HLS'i tanımıyor/takip edemiyor.
-    // Master'ı memory:// ile ver (mpv içerik sniff'i) VE child playlist URL'lerine
-    // .m3u8 ekle ki ffmpeg 7.0 variant'ları takip edebilsin. memory:// edl'e
-    // sokulamadığından bu yolda gömülü altyazı yok — öncelik oynatma.
-    if (masterText) return 'memory://' + rewriteMasterChildExt(masterText);
+    // Uzantısız URL (dizifilm/vidmixi /list/): ffmpeg 7.0 HLS'i tanımıyor.
+    if (masterText) {
+        // Ayrı ses rendition'ı varsa (video-only variant + ayrı ses): edl:// ile
+        // video + ses + altyazıyı birleştir (ffmpeg AUDIO grubunu mux edemiyor).
+        const splitEdl = buildSplitStreamEdl(masterText, subtitles);
+        if (splitEdl) return splitEdl;
+        // Muxed (ayrı ses yok): child URL'lere .m3u8 ekleyip memory:// ile ver.
+        return 'memory://' + rewriteMasterChildExt(masterText);
+    }
     return ensureHlsExtHint(url);
 }
 

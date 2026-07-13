@@ -1,6 +1,6 @@
 /**
  * dizifilm - Built from src/dizifilm/
- * Generated: 2026-07-13T14:19:05.377Z
+ * Generated: 2026-07-13T14:30:56.231Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -653,6 +653,49 @@ function addM3u8Ext(u) {
   const q = s.search(/[?#]/);
   return q >= 0 ? s.slice(0, q) + ".m3u8" + s.slice(q) : s + ".m3u8";
 }
+function buildSplitStreamEdl(masterText, subtitles) {
+  const lines = String(masterText || "").split(/\r?\n/);
+  let bestVideo = null, bestBw = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^#EXT-X-STREAM-INF.*BANDWIDTH=(\d+)/i);
+    if (m) {
+      const url = (lines[i + 1] || "").trim();
+      if (url && !url.startsWith("#") && Number(m[1]) > bestBw) {
+        bestBw = Number(m[1]);
+        bestVideo = url;
+      }
+    }
+  }
+  if (!bestVideo)
+    return null;
+  const audios = [];
+  for (const l of lines) {
+    if (!/^#EXT-X-MEDIA:TYPE=AUDIO/i.test(l))
+      continue;
+    const uri = (l.match(/URI="([^"]+)"/i) || [])[1];
+    if (!uri)
+      continue;
+    const lang = (l.match(/LANGUAGE="([^"]*)"/i) || [])[1] || "und";
+    audios.push({ lang, uri });
+  }
+  if (!audios.length)
+    return null;
+  audios.sort((a, b) => (/tr|tur/i.test(a.lang) ? 0 : 1) - (/tr|tur/i.test(b.lang) ? 0 : 1));
+  let edl = "edl://!no_clip;" + edlQuote(addM3u8Ext(bestVideo));
+  for (const a of audios) {
+    const lang = /tr|tur/i.test(a.lang) ? "tr" : /en|eng/i.test(a.lang) ? "en" : metaSafe(a.lang);
+    const title = lang === "tr" ? "T\xFCrk\xE7e" : lang === "en" ? "English" : metaSafe(a.lang);
+    edl += ";!new_stream;!no_clip;!track_meta,title=" + title + ",lang=" + lang + ";" + edlQuote(addM3u8Ext(a.uri));
+  }
+  const subs = (subtitles || []).filter((t) => t && t.url && /^https?:\/\//i.test(t.url));
+  subs.sort((a, b) => (/^tr/i.test(a.lang || "") ? 0 : 1) - (/^tr/i.test(b.lang || "") ? 0 : 1));
+  for (const sub of subs) {
+    const lang = metaSafe(sub.lang || sub.language || "und");
+    const title = metaSafe(sub.label || sub.name || lang) || lang;
+    edl += ";!new_stream;!no_clip;!delay_open,media_type=sub,codec=" + subCodec(sub) + ";!track_meta,title=" + title + ",lang=" + lang + ";" + edlQuote(sub.url);
+  }
+  return edl;
+}
 function rewriteMasterChildExt(masterText) {
   return String(masterText || "").split(/\r?\n/).map((line) => {
     if (/^#EXT-X-MEDIA/i.test(line)) {
@@ -679,8 +722,12 @@ function maybeEmbedSubsUrl(url, subtitles, masterText) {
   if (hasExt) {
     return subs.length ? buildMpvEdlUrl(url, subs) || url : url;
   }
-  if (masterText)
+  if (masterText) {
+    const splitEdl = buildSplitStreamEdl(masterText, subtitles);
+    if (splitEdl)
+      return splitEdl;
     return "memory://" + rewriteMasterChildExt(masterText);
+  }
   return ensureHlsExtHint(url);
 }
 function embedSubsSettingsLayout() {
@@ -1287,7 +1334,7 @@ function resolveTarget(tmdbId, mediaType, season, episode) {
 function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
   return __async(this, null, function* () {
     try {
-      console.log(`[Dizifilm v1.5.0] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
+      console.log(`[Dizifilm v1.6.0] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
       const resolved = yield resolveTarget(tmdbId, mediaType, season, episode);
       if (!resolved)
         return [];

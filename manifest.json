@@ -1,6 +1,6 @@
 {
   "name": "Turkish Nuvio",
-  "version": "1.13.0",
+  "version": "1.14.0",
   "scrapers": [
     {
       "id": "animecix",
@@ -52,7 +52,7 @@
       "id": "dizifilm",
       "name": "Dizifilm",
       "description": "Türkçe dublaj/altyazılı film ve dizi kaynağı — dizifilm.life",
-      "version": "1.5.0",
+      "version": "1.6.0",
       "author": "turkish-nuvio",
       "supportedTypes": [
         "movie",
