@@ -1,6 +1,6 @@
 /**
  * animecix - Built from src/animecix/
- * Generated: 2026-07-13T10:56:16.588Z
+ * Generated: 2026-07-13T15:31:25.740Z
  */
 var __defProp = Object.defineProperty;
 var __getOwnPropSymbols = Object.getOwnPropertySymbols;
@@ -292,13 +292,18 @@ function findByTmdbId(tmdbId, title, originalTitle, mediaType = "tv") {
     return titleCandidate;
   });
 }
-function getMovieEpisodeUrl(animeId) {
+function getEpisodeVideos(animeId, season = 1, episode = 1) {
   return __async(this, null, function* () {
-    return `secure/best-video?titleId=${animeId}&episode=1&season=1`;
+    const url = `${BASE_URL}secure/episode-videos?titleId=${animeId}&episode=${episode}&season=${season}`;
+    try {
+      const data = yield fetchJson(url);
+      if (Array.isArray(data))
+        return data;
+      return (data == null ? void 0 : data.videos) || (data == null ? void 0 : data.data) || [];
+    } catch (e) {
+      return [];
+    }
   });
-}
-function getEpisodeVideoUrl(animeId, season, episode) {
-  return `secure/best-video?titleId=${animeId}&episode=${episode}&season=${season}`;
 }
 function getSeasonIndices(animeId) {
   return __async(this, null, function* () {
@@ -389,6 +394,43 @@ function buildEmbedUrl(episodePath) {
     return episodePath;
   return `${BASE_URL}${episodePath.replace(/^\/+/, "")}`;
 }
+function parseEmbedIdFromUrl(url) {
+  const m = /tau-video\.xyz\/embed[-/]([A-Za-z0-9]+)/i.exec(String(url || ""));
+  return m ? m[1] : null;
+}
+function extractByEmbedId(embedId, animeTitle, episodeLabel, subName) {
+  return __async(this, null, function* () {
+    if (!embedId)
+      return [];
+    const apiUrl = `https://${VIDEO_PLAYER}/api/video/${embedId}`;
+    let data;
+    try {
+      data = yield fetchJson(apiUrl, {
+        headers: {
+          Referer: `https://${VIDEO_PLAYER}/`,
+          Origin: `https://${VIDEO_PLAYER}`
+        }
+      });
+    } catch (e) {
+      return [];
+    }
+    const urls = (data == null ? void 0 : data.urls) || [];
+    if (!urls.length)
+      return [];
+    const sorted = [...urls].sort((a, b) => qualitySortKey(a.label) - qualitySortKey(b.label));
+    const suffix = subName ? ` \u2022 ${String(subName).slice(0, 40)}` : "";
+    return sorted.map((entry) => ({
+      name: `Animecix (${entry.label || "Auto"})${suffix}`,
+      title: `${animeTitle} - ${episodeLabel}`,
+      url: entry.url,
+      quality: entry.label || "Auto",
+      size: formatSize(entry.size),
+      headers: STREAM_HEADERS,
+      provider: "animecix",
+      type: entry.url.includes(".m3u8") ? "m3u8" : "mp4"
+    }));
+  });
+}
 function extractStreams(episodePath, animeTitle, episodeLabel) {
   return __async(this, null, function* () {
     const embedUrl = buildEmbedUrl(episodePath);
@@ -457,6 +499,26 @@ function createTtlCache(defaultTtlMs = 30 * 60 * 1e3, maxEntries = 200) {
 }
 
 // src/animecix/index.js
+function extractEpisodeSources(animeId, season, episode, animeTitle, label) {
+  return __async(this, null, function* () {
+    const sources = yield getEpisodeVideos(animeId, season, episode);
+    const streams = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const src of sources) {
+      const embedId = parseEmbedIdFromUrl(src && src.url);
+      if (!embedId)
+        continue;
+      const part = yield extractByEmbedId(embedId, animeTitle, label, src.extra);
+      for (const st of part) {
+        if (!st.url || seen.has(st.url))
+          continue;
+        seen.add(st.url);
+        streams.push(st);
+      }
+    }
+    return streams;
+  });
+}
 var resolveCache = createTtlCache(30 * 60 * 1e3, 200);
 function resolveSeries(tmdbId, mediaType) {
   return __async(this, null, function* () {
@@ -480,36 +542,27 @@ function getStreams(tmdbId, mediaType = "tv", season = 1, episode = 1) {
         return [];
       const { animeId, animeTitle } = resolved;
       if (mediaType === "movie") {
-        const episodePath = yield getMovieEpisodeUrl(animeId);
-        if (!episodePath)
-          return [];
-        return yield extractStreams(episodePath, animeTitle, "Film");
+        const movieStreams = yield extractEpisodeSources(animeId, 1, 1, animeTitle, "Film");
+        console.log(`[Animecix] film \u2192 ${movieStreams.length} stream`);
+        return movieStreams;
       }
       const s = season || 1;
       const e = episode || 1;
-      const directStreams = yield extractStreams(
-        getEpisodeVideoUrl(animeId, s, e),
-        animeTitle,
-        `B\xF6l\xFCm ${e}`
-      );
+      const directStreams = yield extractEpisodeSources(animeId, s, e, animeTitle, `B\xF6l\xFCm ${e}`);
       if (directStreams.length) {
-        console.log(`[Animecix] best-video S${s}E${e} \u2192 ${directStreams.length} stream`);
+        console.log(`[Animecix] episode-videos S${s}E${e} \u2192 ${directStreams.length} stream`);
         return directStreams;
       }
-      console.log("[Animecix] best-video ham numarada bo\u015F, mapping deneniyor");
+      console.log("[Animecix] episode-videos bo\u015F, mapping deneniyor");
       try {
         const imdbId = yield getImdbId(tmdbId, mediaType);
         if (imdbId) {
           const mapping = yield resolveEpisodeMapping(imdbId, s, e);
           const mappedEpisode = mapping == null ? void 0 : mapping.mal_episode;
           if (mappedEpisode && mappedEpisode !== e) {
-            const mappedStreams = yield extractStreams(
-              getEpisodeVideoUrl(animeId, s, mappedEpisode),
-              animeTitle,
-              `B\xF6l\xFCm ${e}`
-            );
+            const mappedStreams = yield extractEpisodeSources(animeId, s, mappedEpisode, animeTitle, `B\xF6l\xFCm ${e}`);
             if (mappedStreams.length) {
-              console.log(`[Animecix] best-video (mapped ${mappedEpisode}) \u2192 ${mappedStreams.length} stream`);
+              console.log(`[Animecix] episode-videos (mapped ${mappedEpisode}) \u2192 ${mappedStreams.length} stream`);
               return mappedStreams;
             }
           }

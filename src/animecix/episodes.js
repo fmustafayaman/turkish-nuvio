@@ -40,6 +40,20 @@ export async function findByTmdbId(tmdbId, title, originalTitle, mediaType = 'tv
     return titleCandidate;
 }
 
+// Tek çağrıda bir bölümün TÜM kaynaklarını döndürür (Tau Video, Sibnet, ...).
+// best-video redirect'i + HF mapping + bölüm-listesi fallback'lerinin yerine
+// geçer: daha az ardışık istek, doğrudan embed URL'leri.
+export async function getEpisodeVideos(animeId, season = 1, episode = 1) {
+    const url = `${BASE_URL}secure/episode-videos?titleId=${animeId}&episode=${episode}&season=${season}`;
+    try {
+        const data = await fetchJson(url);
+        if (Array.isArray(data)) return data;
+        return data?.videos || data?.data || [];
+    } catch {
+        return [];
+    }
+}
+
 export async function getMovieEpisodeUrl(animeId) {
     return `secure/best-video?titleId=${animeId}&episode=1&season=1`;
 }

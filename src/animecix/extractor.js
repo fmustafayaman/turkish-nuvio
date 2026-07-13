@@ -34,6 +34,49 @@ function buildEmbedUrl(episodePath) {
     return `${BASE_URL}${episodePath.replace(/^\/+/, '')}`;
 }
 
+// tau-video embed URL'inden ("https://tau-video.xyz/embed/<id>") id çıkar.
+export function parseEmbedIdFromUrl(url) {
+    const m = /tau-video\.xyz\/embed[-/]([A-Za-z0-9]+)/i.exec(String(url || ''));
+    return m ? m[1] : null;
+}
+
+// Doğrudan embedId ile tau-video API'yi çağırıp stream'leri döndürür.
+// `vid` GEREKMİYOR — episode-videos'un verdiği embed URL'i ile redirect'e de
+// gerek kalmıyor (eski best-video + redirect yolundan daha az istek).
+export async function extractByEmbedId(embedId, animeTitle, episodeLabel, subName) {
+    if (!embedId) return [];
+
+    const apiUrl = `https://${VIDEO_PLAYER}/api/video/${embedId}`;
+    let data;
+    try {
+        data = await fetchJson(apiUrl, {
+            headers: {
+                Referer: `https://${VIDEO_PLAYER}/`,
+                Origin: `https://${VIDEO_PLAYER}`
+            }
+        });
+    } catch {
+        return [];
+    }
+
+    const urls = data?.urls || [];
+    if (!urls.length) return [];
+
+    const sorted = [...urls].sort((a, b) => qualitySortKey(a.label) - qualitySortKey(b.label));
+    const suffix = subName ? ` • ${String(subName).slice(0, 40)}` : '';
+
+    return sorted.map(entry => ({
+        name: `Animecix (${entry.label || 'Auto'})${suffix}`,
+        title: `${animeTitle} - ${episodeLabel}`,
+        url: entry.url,
+        quality: entry.label || 'Auto',
+        size: formatSize(entry.size),
+        headers: STREAM_HEADERS,
+        provider: 'animecix',
+        type: entry.url.includes('.m3u8') ? 'm3u8' : 'mp4'
+    }));
+}
+
 export async function extractStreams(episodePath, animeTitle, episodeLabel) {
     const embedUrl = buildEmbedUrl(episodePath);
     const finalUrl = await fetchWithRedirect(embedUrl);
