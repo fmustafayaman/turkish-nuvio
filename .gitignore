@@ -21,3 +21,6 @@ tmp/
 
 # Yerel geliştirme notu (GitHub'a gitmesin)
 CLAUDE.md
+
+# İç içe yabancı repo (Nuvio Desktop kaynağı) — commit edilmesin
+NuvioDesktop/
