@@ -4,7 +4,7 @@ import { fetchText, fetchJson, titlesMatch, normalizeTitle } from './utils.js';
 import { parseRscPayload, parseTmdbId, parseMovieParts, parseEpisodeEmbeds } from './rsc.js';
 import { extractVidlop, extractVidlopSubtitles } from './vidlop.js';
 import { extractBepeak, extractBepeakSubtitles, isBepeakUrl } from './bepeak.js';
-import { maybeEmbedSubsUrl, embedSubsSettingsLayout } from '../shared/hls.js';
+import { maybeEmbedSubsUrl, embedSubsSettingsLayout, ensureHlsExtHint } from '../shared/hls.js';
 
 // Part URL'ine göre doğru host extractor'ını seç. dizifilm zamanla farklı
 // embed host'ları kullanıyor (vidlop.com/video/ → vidmixi.com/embed/ ...).
@@ -176,7 +176,7 @@ async function resolveTarget(tmdbId, mediaType, season, episode) {
 
 async function getStreams(tmdbId, mediaType = 'movie', season = 1, episode = 1) {
     try {
-        console.log(`[Dizifilm v1.2.0] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
+        console.log(`[Dizifilm v1.3.0] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
         const resolved = await resolveTarget(tmdbId, mediaType, season, episode);
         if (!resolved) return [];
         const mediaTitle = resolved.mediaTitle;
@@ -198,11 +198,13 @@ async function getStreams(tmdbId, mediaType = 'movie', season = 1, episode = 1) 
 
                 const label = langLabel(part.language);
                 const subs = stream.subtitles || [];
+                const playUrl = ensureHlsExtHint(stream.url);
+                const quality = stream.quality || part.quality || 'Auto';
                 streams.push({
-                    name: `Dizifilm ${label} • ${part.title}`,
+                    name: `Dizifilm ${quality !== 'Auto' ? quality + ' ' : ''}${label} • ${part.title}`,
                     title: mediaTitle,
-                    url: maybeEmbedSubsUrl(stream.url, subs),
-                    quality: part.quality || 'Auto',
+                    url: maybeEmbedSubsUrl(playUrl, subs),
+                    quality,
                     headers: stream.headers,
                     provider: 'dizifilm',
                     type: stream.type,

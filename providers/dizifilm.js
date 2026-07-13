@@ -1,6 +1,6 @@
 /**
  * dizifilm - Built from src/dizifilm/
- * Generated: 2026-07-13T12:53:00.286Z
+ * Generated: 2026-07-13T13:39:24.481Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -565,6 +565,112 @@ function decodeBase64Bytes(input) {
   return bytes;
 }
 
+// src/shared/hls.js
+function utf8ByteLength(str) {
+  let bytes = 0;
+  for (let i = 0; i < str.length; i++) {
+    const c = str.charCodeAt(i);
+    if (c < 128)
+      bytes += 1;
+    else if (c < 2048)
+      bytes += 2;
+    else if (c >= 55296 && c <= 56319) {
+      bytes += 4;
+      i++;
+    } else
+      bytes += 3;
+  }
+  return bytes;
+}
+function edlQuote(str) {
+  const s = String(str || "");
+  return `%${utf8ByteLength(s)}%${s}`;
+}
+function metaSafe(str) {
+  return String(str || "").replace(/[;,]/g, " ").trim();
+}
+function subCodec(sub) {
+  const fmt = String(sub.format || "").toLowerCase();
+  if (fmt === "srt" || /\.srt(\?|$)/i.test(sub.url || ""))
+    return "subrip";
+  return "webvtt";
+}
+function buildMpvEdlUrl(videoUrl, subtitles) {
+  const subs = (subtitles || []).filter((s) => s && s.url && /^https?:\/\//i.test(s.url));
+  if (!videoUrl || !subs.length)
+    return null;
+  subs.sort((a, b) => {
+    const at = /^tr/i.test(a.lang || a.language || "") ? 0 : 1;
+    const bt = /^tr/i.test(b.lang || b.language || "") ? 0 : 1;
+    return at - bt;
+  });
+  let edl = "edl://!no_clip;" + edlQuote(videoUrl);
+  for (const sub of subs) {
+    const lang = metaSafe(sub.lang || sub.language || "und");
+    const title = metaSafe(sub.label || sub.name || lang) || lang;
+    edl += ";!new_stream;!no_clip;!delay_open,media_type=sub,codec=" + subCodec(sub) + ";!track_meta,title=" + title + ",lang=" + lang + ";" + edlQuote(sub.url);
+  }
+  return edl;
+}
+function detectHlsQuality(masterText) {
+  const text = String(masterText || "");
+  let maxH = 0;
+  const re = /RESOLUTION=(\d+)x(\d+)/gi;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const w = parseInt(m[1], 10);
+    const h = parseInt(m[2], 10);
+    const eq = Math.max(h, Math.round(w * 9 / 16));
+    if (eq > maxH)
+      maxH = eq;
+  }
+  if (!maxH)
+    return null;
+  if (maxH >= 2160)
+    return "4K";
+  if (maxH >= 1440)
+    return "1440p";
+  if (maxH >= 1080)
+    return "1080p";
+  if (maxH >= 720)
+    return "720p";
+  if (maxH >= 480)
+    return "480p";
+  return `${maxH}p`;
+}
+function ensureHlsExtHint(url) {
+  const u = String(url || "");
+  if (!u || !/^https?:\/\//i.test(u))
+    return u;
+  if (/\.m3u8(\?|#|$)/i.test(u) || /\.mp4(\?|#|$)/i.test(u) || /\.mkv(\?|#|$)/i.test(u))
+    return u;
+  return u + (u.indexOf("?") >= 0 ? "&" : "?") + "ext=video.m3u8";
+}
+function maybeEmbedSubsUrl(url, subtitles) {
+  let on = false;
+  try {
+    const s = typeof globalThis !== "undefined" ? globalThis.SCRAPER_SETTINGS : null;
+    on = !!(s && s.embedSubs);
+  } catch (e) {
+    on = false;
+  }
+  if (!on)
+    return url;
+  return buildMpvEdlUrl(url, subtitles) || url;
+}
+function embedSubsSettingsLayout() {
+  return [
+    { type: "header", label: "Desktop Altyaz\u0131" },
+    {
+      type: "toggle",
+      key: "embedSubs",
+      label: "Altyaz\u0131y\u0131 stream i\xE7ine g\xF6m (Desktop)",
+      description: "Nuvio Desktop (MPV) external altyaz\u0131y\u0131 y\xFCklemiyor. Bunu A\xC7ARSAN altyaz\u0131, mpv edl:// ile videonun i\xE7ine g\xF6m\xFCl\xFCr ve player men\xFCs\xFCnde g\xF6r\xFCn\xFCr. TV/Android'de gerekmez, kapal\u0131 b\u0131rak.",
+      defaultValue: false
+    }
+  ];
+}
+
 // src/dizifilm/bepeak.js
 function md5(bytes) {
   function rol(x, c) {
@@ -943,10 +1049,22 @@ function extractBepeak(embedUrl, referer) {
     let streamUrl = String(settings.video_location || "").replace(/\\\//g, "/");
     if (!streamUrl || !/^https?:\/\//.test(streamUrl))
       return [];
+    let quality = null;
+    try {
+      const resp = yield fetch(streamUrl, {
+        headers: __spreadProps(__spreadValues({}, SITE_HEADERS), { Referer: `${origin}/` }),
+        signal: timeoutSignal()
+      });
+      if (resp.ok)
+        quality = detectHlsQuality(yield resp.text());
+    } catch (e) {
+      quality = null;
+    }
     return [{
       url: streamUrl,
       host: "Bepeak",
       type: "m3u8",
+      quality,
       headers: { Referer: `${origin}/`, Origin: origin },
       subtitles: mapSubtitles(settings.strSubtitles, origin)
     }];
@@ -959,78 +1077,6 @@ function extractBepeakSubtitles(embedUrl, referer) {
       return [];
     return mapSubtitles(result.settings.strSubtitles, result.origin);
   });
-}
-
-// src/shared/hls.js
-function utf8ByteLength(str) {
-  let bytes = 0;
-  for (let i = 0; i < str.length; i++) {
-    const c = str.charCodeAt(i);
-    if (c < 128)
-      bytes += 1;
-    else if (c < 2048)
-      bytes += 2;
-    else if (c >= 55296 && c <= 56319) {
-      bytes += 4;
-      i++;
-    } else
-      bytes += 3;
-  }
-  return bytes;
-}
-function edlQuote(str) {
-  const s = String(str || "");
-  return `%${utf8ByteLength(s)}%${s}`;
-}
-function metaSafe(str) {
-  return String(str || "").replace(/[;,]/g, " ").trim();
-}
-function subCodec(sub) {
-  const fmt = String(sub.format || "").toLowerCase();
-  if (fmt === "srt" || /\.srt(\?|$)/i.test(sub.url || ""))
-    return "subrip";
-  return "webvtt";
-}
-function buildMpvEdlUrl(videoUrl, subtitles) {
-  const subs = (subtitles || []).filter((s) => s && s.url && /^https?:\/\//i.test(s.url));
-  if (!videoUrl || !subs.length)
-    return null;
-  subs.sort((a, b) => {
-    const at = /^tr/i.test(a.lang || a.language || "") ? 0 : 1;
-    const bt = /^tr/i.test(b.lang || b.language || "") ? 0 : 1;
-    return at - bt;
-  });
-  let edl = "edl://!no_clip;" + edlQuote(videoUrl);
-  for (const sub of subs) {
-    const lang = metaSafe(sub.lang || sub.language || "und");
-    const title = metaSafe(sub.label || sub.name || lang) || lang;
-    edl += ";!new_stream;!no_clip;!delay_open,media_type=sub,codec=" + subCodec(sub) + ";!track_meta,title=" + title + ",lang=" + lang + ";" + edlQuote(sub.url);
-  }
-  return edl;
-}
-function maybeEmbedSubsUrl(url, subtitles) {
-  let on = false;
-  try {
-    const s = typeof globalThis !== "undefined" ? globalThis.SCRAPER_SETTINGS : null;
-    on = !!(s && s.embedSubs);
-  } catch (e) {
-    on = false;
-  }
-  if (!on)
-    return url;
-  return buildMpvEdlUrl(url, subtitles) || url;
-}
-function embedSubsSettingsLayout() {
-  return [
-    { type: "header", label: "Desktop Altyaz\u0131" },
-    {
-      type: "toggle",
-      key: "embedSubs",
-      label: "Altyaz\u0131y\u0131 stream i\xE7ine g\xF6m (Desktop)",
-      description: "Nuvio Desktop (MPV) external altyaz\u0131y\u0131 y\xFCklemiyor. Bunu A\xC7ARSAN altyaz\u0131, mpv edl:// ile videonun i\xE7ine g\xF6m\xFCl\xFCr ve player men\xFCs\xFCnde g\xF6r\xFCn\xFCr. TV/Android'de gerekmez, kapal\u0131 b\u0131rak.",
-      defaultValue: false
-    }
-  ];
 }
 
 // src/dizifilm/index.js
@@ -1212,7 +1258,7 @@ function resolveTarget(tmdbId, mediaType, season, episode) {
 function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
   return __async(this, null, function* () {
     try {
-      console.log(`[Dizifilm v1.2.0] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
+      console.log(`[Dizifilm v1.3.0] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
       const resolved = yield resolveTarget(tmdbId, mediaType, season, episode);
       if (!resolved)
         return [];
@@ -1232,11 +1278,13 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
           seen.add(stream.url);
           const label = langLabel(part.language);
           const subs = stream.subtitles || [];
+          const playUrl = ensureHlsExtHint(stream.url);
+          const quality = stream.quality || part.quality || "Auto";
           streams.push({
-            name: `Dizifilm ${label} \u2022 ${part.title}`,
+            name: `Dizifilm ${quality !== "Auto" ? quality + " " : ""}${label} \u2022 ${part.title}`,
             title: mediaTitle,
-            url: maybeEmbedSubsUrl(stream.url, subs),
-            quality: part.quality || "Auto",
+            url: maybeEmbedSubsUrl(playUrl, subs),
+            quality,
             headers: stream.headers,
             provider: "dizifilm",
             type: stream.type,

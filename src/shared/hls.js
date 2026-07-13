@@ -89,6 +89,19 @@ export function detectHlsQuality(masterText) {
     return `${maxH}p`;
 }
 
+// Bazı host'lar (ör. vidmixi /list/<blob>) HLS master'ı uzantısız ve
+// content-type "text/plain" ile veriyor. mpv/ffmpeg HLS'i uzantı VEYA mime'dan
+// tanır; ikisi de yoksa "Not detecting m3u8/hls..." deyip oynatmaz (desktop'ta
+// dizifilm'in yüklenmemesinin sebebi buydu). Zararsız bir query eki ("ext=…m3u8")
+// ffmpeg'in uzantı eşleştirmesini tetikliyor; sunucu query'yi yok sayıp aynı
+// içeriği veriyor, ExoPlayer/AVPlayer query'yi umursamıyor. mpv ile doğrulandı.
+export function ensureHlsExtHint(url) {
+    const u = String(url || '');
+    if (!u || !/^https?:\/\//i.test(u)) return u;
+    if (/\.m3u8(\?|#|$)/i.test(u) || /\.mp4(\?|#|$)/i.test(u) || /\.mkv(\?|#|$)/i.test(u)) return u;
+    return u + (u.indexOf('?') >= 0 ? '&' : '?') + 'ext=video.m3u8';
+}
+
 // Kullanıcının "embedSubs" ayarı açıksa videoyu altyazılarla edl:// olarak
 // birleştirir, değilse url'yi olduğu gibi döndürür. Ayar globalThis.SCRAPER_SETTINGS
 // üzerinden gelir (Nuvio her plugin çalıştırmasında enjekte eder).

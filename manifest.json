@@ -1,6 +1,6 @@
 {
   "name": "Turkish Nuvio",
-  "version": "1.10.2",
+  "version": "1.11.0",
   "scrapers": [
     {
       "id": "animecix",
@@ -29,7 +29,7 @@
       "id": "fullhdfilm",
       "name": "FullHDFilmizlesene",
       "description": "Türkçe dublaj/altyazılı film kaynağı — fullhdfilmizlesene.life",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "author": "turkish-nuvio",
       "supportedTypes": [
         "movie"
@@ -52,7 +52,7 @@
       "id": "dizifilm",
       "name": "Dizifilm",
       "description": "Türkçe dublaj/altyazılı film ve dizi kaynağı — dizifilm.life",
-      "version": "1.2.0",
+      "version": "1.3.0",
       "author": "turkish-nuvio",
       "supportedTypes": [
         "movie",

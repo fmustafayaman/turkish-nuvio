@@ -2,7 +2,7 @@ import { getTmdbInfo } from '../shared/tmdb.js';
 import { DOMAIN_CANDIDATES } from './constants.js';
 import { fetchText, decodeScxLink, titlesMatch, normalizeTitle } from './utils.js';
 import { extractHost } from './extractors.js';
-import { maybeEmbedSubsUrl, embedSubsSettingsLayout } from '../shared/hls.js';
+import { maybeEmbedSubsUrl, embedSubsSettingsLayout, ensureHlsExtHint } from '../shared/hls.js';
 
 const SCX_KEYS = ['atom', 'advid', 'advidprox', 'proton', 'fast', 'fastly', 'tr', 'en'];
 
@@ -185,10 +185,11 @@ async function getStreams(tmdbId, mediaType = 'movie', season = 1, episode = 1) 
                 if (!s.url || seen.has(s.url)) continue;
                 seen.add(s.url);
                 const subs = s.subtitles || [];
+                const playUrl = ensureHlsExtHint(s.url);
                 streams.push({
                     name: `FullHDFilm ${entry.label} • ${s.host}`,
                     title: mediaTitle,
-                    url: maybeEmbedSubsUrl(s.url, subs),
+                    url: maybeEmbedSubsUrl(playUrl, subs),
                     quality: 'Auto',
                     headers: s.headers,
                     provider: 'fullhdfilm',

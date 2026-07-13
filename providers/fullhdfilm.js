@@ -1,6 +1,6 @@
 /**
  * fullhdfilm - Built from src/fullhdfilm/
- * Generated: 2026-07-13T12:53:00.316Z
+ * Generated: 2026-07-13T13:39:24.490Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -584,6 +584,14 @@ function buildMpvEdlUrl(videoUrl, subtitles) {
   }
   return edl;
 }
+function ensureHlsExtHint(url) {
+  const u = String(url || "");
+  if (!u || !/^https?:\/\//i.test(u))
+    return u;
+  if (/\.m3u8(\?|#|$)/i.test(u) || /\.mp4(\?|#|$)/i.test(u) || /\.mkv(\?|#|$)/i.test(u))
+    return u;
+  return u + (u.indexOf("?") >= 0 ? "&" : "?") + "ext=video.m3u8";
+}
 function maybeEmbedSubsUrl(url, subtitles) {
   let on = false;
   try {
@@ -774,10 +782,11 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
             continue;
           seen.add(s.url);
           const subs = s.subtitles || [];
+          const playUrl = ensureHlsExtHint(s.url);
           streams.push({
             name: `FullHDFilm ${entry.label} \u2022 ${s.host}`,
             title: mediaTitle,
-            url: maybeEmbedSubsUrl(s.url, subs),
+            url: maybeEmbedSubsUrl(playUrl, subs),
             quality: "Auto",
             headers: s.headers,
             provider: "fullhdfilm",

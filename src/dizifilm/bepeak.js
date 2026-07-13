@@ -7,6 +7,7 @@
 import { SITE_HEADERS } from './constants.js';
 import { timeoutSignal } from '../shared/http.js';
 import { decodeBase64Bytes } from '../shared/base64.js';
+import { detectHlsQuality } from '../shared/hls.js';
 
 // --- MD5 (RFC 1321) ---------------------------------------------------------
 function md5(bytes) {
@@ -304,10 +305,24 @@ export async function extractBepeak(embedUrl, referer) {
     let streamUrl = String(settings.video_location || '').replace(/\\\//g, '/');
     if (!streamUrl || !/^https?:\/\//.test(streamUrl)) return [];
 
+    // Master'daki en yüksek çözünürlükten kalite etiketi çıkar (vidmixi genelde
+    // 480p + 1080p sunar). Başarısız olursa null.
+    let quality = null;
+    try {
+        const resp = await fetch(streamUrl, {
+            headers: { ...SITE_HEADERS, Referer: `${origin}/` },
+            signal: timeoutSignal()
+        });
+        if (resp.ok) quality = detectHlsQuality(await resp.text());
+    } catch {
+        quality = null;
+    }
+
     return [{
         url: streamUrl,
         host: 'Bepeak',
         type: 'm3u8',
+        quality,
         headers: { Referer: `${origin}/`, Origin: origin },
         subtitles: mapSubtitles(settings.strSubtitles, origin)
     }];
