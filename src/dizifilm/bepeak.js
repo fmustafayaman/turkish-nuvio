@@ -305,15 +305,19 @@ export async function extractBepeak(embedUrl, referer) {
     let streamUrl = String(settings.video_location || '').replace(/\\\//g, '/');
     if (!streamUrl || !/^https?:\/\//.test(streamUrl)) return [];
 
-    // Master'daki en yüksek çözünürlükten kalite etiketi çıkar (vidmixi genelde
-    // 480p + 1080p sunar). Başarısız olursa null.
+    // Master'ı bir kez çek: kalite etiketi (RESOLUTION) + masaüstü modu için
+    // memory:// içine konacak ham metin. vidmixi genelde 480p + 1080p sunar.
     let quality = null;
+    let master = null;
     try {
         const resp = await fetch(streamUrl, {
             headers: { ...SITE_HEADERS, Referer: `${origin}/` },
             signal: timeoutSignal()
         });
-        if (resp.ok) quality = detectHlsQuality(await resp.text());
+        if (resp.ok) {
+            master = await resp.text();
+            quality = detectHlsQuality(master);
+        }
     } catch {
         quality = null;
     }
@@ -323,6 +327,7 @@ export async function extractBepeak(embedUrl, referer) {
         host: 'Bepeak',
         type: 'm3u8',
         quality,
+        master,
         headers: { Referer: `${origin}/`, Origin: origin },
         subtitles: mapSubtitles(settings.strSubtitles, origin)
     }];

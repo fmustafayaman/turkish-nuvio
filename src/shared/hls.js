@@ -105,7 +105,7 @@ export function ensureHlsExtHint(url) {
 // Kullanıcının "embedSubs" ayarı açıksa videoyu altyazılarla edl:// olarak
 // birleştirir, değilse url'yi olduğu gibi döndürür. Ayar globalThis.SCRAPER_SETTINGS
 // üzerinden gelir (Nuvio her plugin çalıştırmasında enjekte eder).
-export function maybeEmbedSubsUrl(url, subtitles) {
+export function maybeEmbedSubsUrl(url, subtitles, masterText) {
     let on = false;
     try {
         const s = typeof globalThis !== 'undefined' ? globalThis.SCRAPER_SETTINGS : null;
@@ -113,8 +113,27 @@ export function maybeEmbedSubsUrl(url, subtitles) {
     } catch {
         on = false;
     }
-    if (!on) return url;
-    return buildMpvEdlUrl(url, subtitles) || url;
+
+    // Ayar KAPALI (mobil/TV): sadece zararsız uzantı ipucu (ExoPlayer/AVPlayer
+    // umursamaz; yeni ffmpeg'de HLS algılamasına yardım eder).
+    if (!on) return ensureHlsExtHint(url);
+
+    // Ayar AÇIK (Desktop/mpv):
+    const hasExt = /\.m3u8(\?|#|$)/i.test(url);
+    const subs = (subtitles || []).filter(t => t && t.url && /^https?:\/\//i.test(t.url));
+
+    if (hasExt) {
+        // dizibal gibi gerçek .m3u8 URL: ffmpeg 7.0 de algılar. Altyazı varsa
+        // edl:// ile birleştir (oynatma + seçilebilir altyazı).
+        return subs.length ? (buildMpvEdlUrl(url, subs) || url) : url;
+    }
+
+    // Uzantısız URL (dizifilm/vidmixi /list/): ffmpeg text/plain + uzantısız
+    // olduğu için HLS'i tanımıyor. mpv'nin memory:// protokolü içeriği sniff'leyip
+    // oynatır (ffmpeg sürümünden bağımsız). memory:// edl'e sokulamadığından bu
+    // yolda gömülü altyazı yok — öncelik oynatma.
+    if (masterText) return 'memory://' + masterText;
+    return ensureHlsExtHint(url);
 }
 
 // Nuvio ayar diyaloğu için ortak "Desktop altyazı" toggle tanımı. Her provider
@@ -125,8 +144,8 @@ export function embedSubsSettingsLayout() {
         {
             type: 'toggle',
             key: 'embedSubs',
-            label: 'Altyazıyı stream içine göm (Desktop)',
-            description: 'Nuvio Desktop (MPV) external altyazıyı yüklemiyor. Bunu AÇARSAN altyazı, mpv edl:// ile videonun içine gömülür ve player menüsünde görünür. TV/Android\'de gerekmez, kapalı bırak.',
+            label: 'Masaüstü modu (oynatma + altyazı düzeltmesi)',
+            description: 'Nuvio Desktop (MPV) için: bazı kaynaklar masaüstünde oynamaz veya altyazı yüklemez. Bunu AÇARSAN stream masaüstü mpv için uyarlanır (oynatma düzeltmesi + mümkün olan yerde gömülü altyazı). SADECE masaüstünde aç; TV/Android\'de kapalı bırak.',
             defaultValue: false
         }
     ];

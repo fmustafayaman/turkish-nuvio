@@ -1,19 +1,6 @@
 import { getTmdbInfo } from '../shared/tmdb.js';
 import { withTimeout, timeoutSignal, DEFAULT_TIMEOUT_MS } from '../shared/http.js';
-import { buildMpvEdlUrl, detectHlsQuality } from '../shared/hls.js';
-
-// Kullanıcı ayarı: desktop'ta MPV external altyazıyı yüklemediği için (PR #168
-// merge edilmedi) video + altyazıyı mpv edl:// ile birleştirme modu. Varsayılan
-// kapalı; yalnızca desktop kullanıcısı açar (edl:// mpv'ye özgü), TV/Android
-// eskisi gibi kalır.
-function readSetting(key) {
-    try {
-        const s = typeof globalThis !== 'undefined' ? globalThis.SCRAPER_SETTINGS : null;
-        return s ? s[key] : undefined;
-    } catch {
-        return undefined;
-    }
-}
+import { maybeEmbedSubsUrl, detectHlsQuality, embedSubsSettingsLayout } from '../shared/hls.js';
 
 const BASE_URL = 'https://dizibal.com';
 
@@ -292,24 +279,20 @@ async function getStreams(tmdbId, mediaType = 'movie', season = 1, episode = 1) 
             .map(sub => normalizeSubtitle(sub, referer))
             .filter(Boolean);
 
-        let streamUrl = extracted.url;
-
-        // Master'daki çözünürlükten kalite etiketini çıkar (kaynakta genelde tek
-        // rendition var; artırma değil, sadece gerçek kaliteyi göstermek için).
-        let quality = 'Auto';
+        // Master'ı bir kez çek: kalite etiketi + masaüstü modu dönüşümü için.
+        let masterText = null;
         try {
-            quality = detectHlsQuality(await fetchText(extracted.url, referer)) || 'Auto';
+            masterText = await fetchText(extracted.url, referer);
         } catch {
-            quality = 'Auto';
+            masterText = null;
         }
+        const quality = detectHlsQuality(masterText || '') || 'Auto';
 
-        // Desktop altyazı modu: video + altyazıları mpv edl:// ile tek URL'de birleştir.
-        if (readSetting('embedSubs') && subtitles.length) {
-            const edl = buildMpvEdlUrl(extracted.url, subtitles);
-            if (edl) {
-                streamUrl = edl;
-                console.log(`[Dizibal v1.2.4] embedSubs: ${subtitles.length} altyazı edl:// ile birleştirildi`);
-            }
+        // Masaüstü modu (ayar açıksa): dizibal URL'i .m3u8 olduğu için edl ile
+        // video + altyazı birleşir. maybeEmbedSubsUrl kapalıyken url'yi korur.
+        const streamUrl = maybeEmbedSubsUrl(extracted.url, subtitles, masterText);
+        if (streamUrl !== extracted.url) {
+            console.log(`[Dizibal v1.2.5] masaüstü modu: stream dönüştürüldü (${subtitles.length} altyazı)`);
         }
 
         return [{
@@ -329,16 +312,7 @@ async function getStreams(tmdbId, mediaType = 'movie', season = 1, episode = 1) 
 
 // Nuvio, plugin ayarlarını bu layout'a göre çizer; değerler globalThis.SCRAPER_SETTINGS'e gelir.
 async function onSettings() {
-    return [
-        { type: 'header', label: 'Desktop Altyazı' },
-        {
-            type: 'toggle',
-            key: 'embedSubs',
-            label: 'Altyazıyı stream içine göm (Desktop)',
-            description: 'Nuvio Desktop (MPV) external altyazıyı yüklemiyor. Bunu AÇARSAN altyazı HLS akışının içine gömülür ve player menüsünde görünür. TV/Android\'de gerekmez, kapalı bırak.',
-            defaultValue: false
-        }
-    ];
+    return embedSubsSettingsLayout();
 }
 
 async function getSubtitles(tmdbId, mediaType = 'movie', season = 1, episode = 1) {

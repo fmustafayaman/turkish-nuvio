@@ -1,6 +1,6 @@
 /**
  * dizibal - Built from src/dizibal/
- * Generated: 2026-07-13T13:10:05.610Z
+ * Generated: 2026-07-13T14:12:47.729Z
  */
 var __defProp = Object.defineProperty;
 var __getOwnPropSymbols = Object.getOwnPropertySymbols;
@@ -227,16 +227,47 @@ function detectHlsQuality(masterText) {
     return "480p";
   return `${maxH}p`;
 }
-
-// src/dizibal/index.js
-function readSetting(key) {
+function ensureHlsExtHint(url) {
+  const u = String(url || "");
+  if (!u || !/^https?:\/\//i.test(u))
+    return u;
+  if (/\.m3u8(\?|#|$)/i.test(u) || /\.mp4(\?|#|$)/i.test(u) || /\.mkv(\?|#|$)/i.test(u))
+    return u;
+  return u + (u.indexOf("?") >= 0 ? "&" : "?") + "ext=video.m3u8";
+}
+function maybeEmbedSubsUrl(url, subtitles, masterText) {
+  let on = false;
   try {
     const s = typeof globalThis !== "undefined" ? globalThis.SCRAPER_SETTINGS : null;
-    return s ? s[key] : void 0;
+    on = !!(s && s.embedSubs);
   } catch (e) {
-    return void 0;
+    on = false;
   }
+  if (!on)
+    return ensureHlsExtHint(url);
+  const hasExt = /\.m3u8(\?|#|$)/i.test(url);
+  const subs = (subtitles || []).filter((t) => t && t.url && /^https?:\/\//i.test(t.url));
+  if (hasExt) {
+    return subs.length ? buildMpvEdlUrl(url, subs) || url : url;
+  }
+  if (masterText)
+    return "memory://" + masterText;
+  return ensureHlsExtHint(url);
 }
+function embedSubsSettingsLayout() {
+  return [
+    { type: "header", label: "Desktop Altyaz\u0131" },
+    {
+      type: "toggle",
+      key: "embedSubs",
+      label: "Masa\xFCst\xFC modu (oynatma + altyaz\u0131 d\xFCzeltmesi)",
+      description: "Nuvio Desktop (MPV) i\xE7in: baz\u0131 kaynaklar masa\xFCst\xFCnde oynamaz veya altyaz\u0131 y\xFCklemez. Bunu A\xC7ARSAN stream masa\xFCst\xFC mpv i\xE7in uyarlan\u0131r (oynatma d\xFCzeltmesi + m\xFCmk\xFCn olan yerde g\xF6m\xFCl\xFC altyaz\u0131). SADECE masa\xFCst\xFCnde a\xE7; TV/Android'de kapal\u0131 b\u0131rak.",
+      defaultValue: false
+    }
+  ];
+}
+
+// src/dizibal/index.js
 var BASE_URL = "https://dizibal.com";
 var HEADERS = {
   "User-Agent": "Mozilla/5.0",
@@ -500,19 +531,16 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
         return [];
       const referer = extracted.embedOrigin ? `${extracted.embedOrigin}/` : `${BASE_URL}/`;
       const subtitles = extracted.subtitles.map((sub) => normalizeSubtitle(sub, referer)).filter(Boolean);
-      let streamUrl = extracted.url;
-      let quality = "Auto";
+      let masterText = null;
       try {
-        quality = detectHlsQuality(yield fetchText(extracted.url, referer)) || "Auto";
+        masterText = yield fetchText(extracted.url, referer);
       } catch (e) {
-        quality = "Auto";
+        masterText = null;
       }
-      if (readSetting("embedSubs") && subtitles.length) {
-        const edl = buildMpvEdlUrl(extracted.url, subtitles);
-        if (edl) {
-          streamUrl = edl;
-          console.log(`[Dizibal v1.2.4] embedSubs: ${subtitles.length} altyaz\u0131 edl:// ile birle\u015Ftirildi`);
-        }
+      const quality = detectHlsQuality(masterText || "") || "Auto";
+      const streamUrl = maybeEmbedSubsUrl(extracted.url, subtitles, masterText);
+      if (streamUrl !== extracted.url) {
+        console.log(`[Dizibal v1.2.5] masa\xFCst\xFC modu: stream d\xF6n\xFC\u015Ft\xFCr\xFCld\xFC (${subtitles.length} altyaz\u0131)`);
       }
       return [{
         name: `Dizibal ${quality}`.trim(),
@@ -531,16 +559,7 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
 }
 function onSettings() {
   return __async(this, null, function* () {
-    return [
-      { type: "header", label: "Desktop Altyaz\u0131" },
-      {
-        type: "toggle",
-        key: "embedSubs",
-        label: "Altyaz\u0131y\u0131 stream i\xE7ine g\xF6m (Desktop)",
-        description: "Nuvio Desktop (MPV) external altyaz\u0131y\u0131 y\xFCklemiyor. Bunu A\xC7ARSAN altyaz\u0131 HLS ak\u0131\u015F\u0131n\u0131n i\xE7ine g\xF6m\xFCl\xFCr ve player men\xFCs\xFCnde g\xF6r\xFCn\xFCr. TV/Android'de gerekmez, kapal\u0131 b\u0131rak.",
-        defaultValue: false
-      }
-    ];
+    return embedSubsSettingsLayout();
   });
 }
 function getSubtitles(tmdbId, mediaType = "movie", season = 1, episode = 1) {

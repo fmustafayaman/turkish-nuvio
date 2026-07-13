@@ -1,6 +1,6 @@
 /**
  * fullhdfilm - Built from src/fullhdfilm/
- * Generated: 2026-07-13T13:39:24.490Z
+ * Generated: 2026-07-13T14:12:47.742Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -592,7 +592,7 @@ function ensureHlsExtHint(url) {
     return u;
   return u + (u.indexOf("?") >= 0 ? "&" : "?") + "ext=video.m3u8";
 }
-function maybeEmbedSubsUrl(url, subtitles) {
+function maybeEmbedSubsUrl(url, subtitles, masterText) {
   let on = false;
   try {
     const s = typeof globalThis !== "undefined" ? globalThis.SCRAPER_SETTINGS : null;
@@ -601,8 +601,15 @@ function maybeEmbedSubsUrl(url, subtitles) {
     on = false;
   }
   if (!on)
-    return url;
-  return buildMpvEdlUrl(url, subtitles) || url;
+    return ensureHlsExtHint(url);
+  const hasExt = /\.m3u8(\?|#|$)/i.test(url);
+  const subs = (subtitles || []).filter((t) => t && t.url && /^https?:\/\//i.test(t.url));
+  if (hasExt) {
+    return subs.length ? buildMpvEdlUrl(url, subs) || url : url;
+  }
+  if (masterText)
+    return "memory://" + masterText;
+  return ensureHlsExtHint(url);
 }
 function embedSubsSettingsLayout() {
   return [
@@ -610,8 +617,8 @@ function embedSubsSettingsLayout() {
     {
       type: "toggle",
       key: "embedSubs",
-      label: "Altyaz\u0131y\u0131 stream i\xE7ine g\xF6m (Desktop)",
-      description: "Nuvio Desktop (MPV) external altyaz\u0131y\u0131 y\xFCklemiyor. Bunu A\xC7ARSAN altyaz\u0131, mpv edl:// ile videonun i\xE7ine g\xF6m\xFCl\xFCr ve player men\xFCs\xFCnde g\xF6r\xFCn\xFCr. TV/Android'de gerekmez, kapal\u0131 b\u0131rak.",
+      label: "Masa\xFCst\xFC modu (oynatma + altyaz\u0131 d\xFCzeltmesi)",
+      description: "Nuvio Desktop (MPV) i\xE7in: baz\u0131 kaynaklar masa\xFCst\xFCnde oynamaz veya altyaz\u0131 y\xFCklemez. Bunu A\xC7ARSAN stream masa\xFCst\xFC mpv i\xE7in uyarlan\u0131r (oynatma d\xFCzeltmesi + m\xFCmk\xFCn olan yerde g\xF6m\xFCl\xFC altyaz\u0131). SADECE masa\xFCst\xFCnde a\xE7; TV/Android'de kapal\u0131 b\u0131rak.",
       defaultValue: false
     }
   ];
