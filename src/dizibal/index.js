@@ -1,10 +1,11 @@
 import { getTmdbInfo } from '../shared/tmdb.js';
 import { withTimeout, timeoutSignal, DEFAULT_TIMEOUT_MS } from '../shared/http.js';
-import { buildSubtitleHlsDataUri } from '../shared/hls.js';
+import { buildMpvEdlUrl } from '../shared/hls.js';
 
 // Kullanıcı ayarı: desktop'ta MPV external altyazıyı yüklemediği için (PR #168
-// merge edilmedi) altyazıyı HLS master'ına gömme modu. Varsayılan kapalı;
-// yalnızca desktop kullanıcısı açar, TV/Android eskisi gibi kalır.
+// merge edilmedi) video + altyazıyı mpv edl:// ile birleştirme modu. Varsayılan
+// kapalı; yalnızca desktop kullanıcısı açar (edl:// mpv'ye özgü), TV/Android
+// eskisi gibi kalır.
 function readSetting(key) {
     try {
         const s = typeof globalThis !== 'undefined' ? globalThis.SCRAPER_SETTINGS : null;
@@ -270,7 +271,7 @@ async function resolveTarget(tmdbId, mediaType, season, episode) {
 
 async function getStreams(tmdbId, mediaType = 'movie', season = 1, episode = 1) {
     try {
-        console.log(`[Dizibal v1.2.0] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
+        console.log(`[Dizibal v1.2.1] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
         const resolved = await resolveTarget(tmdbId, mediaType, season, episode);
         if (!resolved) return [];
 
@@ -285,17 +286,12 @@ async function getStreams(tmdbId, mediaType = 'movie', season = 1, episode = 1) 
 
         let streamUrl = extracted.url;
 
-        // Desktop altyazı modu: altyazıyı HLS master'ına gömüp data: URI döndür.
+        // Desktop altyazı modu: video + altyazıları mpv edl:// ile tek URL'de birleştir.
         if (readSetting('embedSubs') && subtitles.length) {
-            try {
-                const masterText = await fetchText(extracted.url, referer);
-                const dataUri = buildSubtitleHlsDataUri(extracted.url, masterText, subtitles);
-                if (dataUri) {
-                    streamUrl = dataUri;
-                    console.log(`[Dizibal v1.2.0] embedSubs: ${subtitles.length} altyazı manifest'e gömüldü`);
-                }
-            } catch (e) {
-                console.error('[Dizibal v1.2.0] embedSubs hatası, orijinal url kullanılıyor:', e && e.message ? e.message : e);
+            const edl = buildMpvEdlUrl(extracted.url, subtitles);
+            if (edl) {
+                streamUrl = edl;
+                console.log(`[Dizibal v1.2.1] embedSubs: ${subtitles.length} altyazı edl:// ile birleştirildi`);
             }
         }
 

@@ -1,6 +1,6 @@
 /**
  * dizibal - Built from src/dizibal/
- * Generated: 2026-07-13T12:22:00.918Z
+ * Generated: 2026-07-13T12:36:06.079Z
  */
 var __defProp = Object.defineProperty;
 var __getOwnPropSymbols = Object.getOwnPropertySymbols;
@@ -155,81 +155,51 @@ function getTmdbInfo(tmdbId, mediaType) {
 }
 
 // src/shared/hls.js
-function absolutize(url, baseUrl) {
-  const u = String(url || "").trim();
-  if (/^https?:\/\//i.test(u) || /^data:/i.test(u))
-    return u;
-  const base = String(baseUrl || "");
-  if (u.startsWith("/")) {
-    const m = base.match(/^(https?:\/\/[^/]+)/i);
-    return m ? m[1] + u : u;
+function utf8ByteLength(str) {
+  let bytes = 0;
+  for (let i = 0; i < str.length; i++) {
+    const c = str.charCodeAt(i);
+    if (c < 128)
+      bytes += 1;
+    else if (c < 2048)
+      bytes += 2;
+    else if (c >= 55296 && c <= 56319) {
+      bytes += 4;
+      i++;
+    } else
+      bytes += 3;
   }
-  const slash = base.lastIndexOf("/");
-  return slash >= 0 ? base.slice(0, slash + 1) + u : u;
+  return bytes;
 }
-function subtitlePlaylistDataUri(subUrl) {
-  const playlist = [
-    "#EXTM3U",
-    "#EXT-X-VERSION:3",
-    "#EXT-X-TARGETDURATION:99999",
-    "#EXT-X-MEDIA-SEQUENCE:0",
-    "#EXT-X-PLAYLIST-TYPE:VOD",
-    "#EXTINF:99999.0,",
-    subUrl,
-    "#EXT-X-ENDLIST",
-    ""
-  ].join("\n");
-  return "data:application/vnd.apple.mpegurl," + encodeURIComponent(playlist);
+function edlQuote(str) {
+  const s = String(str || "");
+  return `%${utf8ByteLength(s)}%${s}`;
 }
-function subMediaLine(sub, groupId, isDefault) {
-  const lang = sub.lang || sub.language || "und";
-  const name = (sub.label || sub.name || lang).replace(/"/g, "");
-  const uri = subtitlePlaylistDataUri(sub.url);
-  return `#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="${groupId}",NAME="${name}",DEFAULT=${isDefault ? "YES" : "NO"},AUTOSELECT=YES,FORCED=NO,LANGUAGE="${lang}",URI="${uri}"`;
+function metaSafe(str) {
+  return String(str || "").replace(/[;,]/g, " ").trim();
 }
-function buildSubtitleHlsDataUri(masterUrl, masterText, subtitles) {
+function subCodec(sub) {
+  const fmt = String(sub.format || "").toLowerCase();
+  if (fmt === "srt" || /\.srt(\?|$)/i.test(sub.url || ""))
+    return "subrip";
+  return "webvtt";
+}
+function buildMpvEdlUrl(videoUrl, subtitles) {
   const subs = (subtitles || []).filter((s) => s && s.url && /^https?:\/\//i.test(s.url));
-  if (!subs.length)
+  if (!videoUrl || !subs.length)
     return null;
-  const text = String(masterText || "");
-  if (!/#EXT-X-STREAM-INF/i.test(text))
-    return null;
-  const groupId = "subs";
-  let defaultIdx = subs.findIndex((s) => /^tr/i.test(s.lang || s.language || ""));
-  if (defaultIdx < 0)
-    defaultIdx = 0;
-  const lines = text.split(/\r?\n/);
-  const out = [];
-  let injected = false;
-  for (let i = 0; i < lines.length; i++) {
-    let line = lines[i];
-    if (/^#EXTM3U/i.test(line) && !injected) {
-      out.push(line);
-      subs.forEach((sub, idx) => out.push(subMediaLine(sub, groupId, idx === defaultIdx)));
-      injected = true;
-      continue;
-    }
-    if (/^#EXT-X-STREAM-INF/i.test(line)) {
-      if (!/SUBTITLES=/i.test(line))
-        line = line + `,SUBTITLES="${groupId}"`;
-      out.push(line);
-      if (i + 1 < lines.length) {
-        const uriLine = lines[i + 1];
-        if (uriLine && !uriLine.startsWith("#")) {
-          out.push(absolutize(uriLine, masterUrl));
-          i++;
-        }
-      }
-      continue;
-    }
-    if (/^#EXT-X-MEDIA/i.test(line) && /URI="/i.test(line)) {
-      line = line.replace(/URI="([^"]+)"/i, (_, u) => `URI="${absolutize(u, masterUrl)}"`);
-    }
-    out.push(line);
+  subs.sort((a, b) => {
+    const at = /^tr/i.test(a.lang || a.language || "") ? 0 : 1;
+    const bt = /^tr/i.test(b.lang || b.language || "") ? 0 : 1;
+    return at - bt;
+  });
+  let edl = "edl://!no_clip;" + edlQuote(videoUrl);
+  for (const sub of subs) {
+    const lang = metaSafe(sub.lang || sub.language || "und");
+    const title = metaSafe(sub.label || sub.name || lang) || lang;
+    edl += ";!new_stream;!no_clip;!delay_open,media_type=sub,codec=" + subCodec(sub) + ";!track_meta,title=" + title + ",lang=" + lang + ";" + edlQuote(sub.url);
   }
-  if (!injected)
-    return null;
-  return "data:application/vnd.apple.mpegurl," + encodeURIComponent(out.join("\n"));
+  return edl;
 }
 
 // src/dizibal/index.js
@@ -491,7 +461,7 @@ function resolveTarget(tmdbId, mediaType, season, episode) {
 function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
   return __async(this, null, function* () {
     try {
-      console.log(`[Dizibal v1.2.0] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
+      console.log(`[Dizibal v1.2.1] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
       const resolved = yield resolveTarget(tmdbId, mediaType, season, episode);
       if (!resolved)
         return [];
@@ -502,15 +472,10 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
       const subtitles = extracted.subtitles.map((sub) => normalizeSubtitle(sub, referer)).filter(Boolean);
       let streamUrl = extracted.url;
       if (readSetting("embedSubs") && subtitles.length) {
-        try {
-          const masterText = yield fetchText(extracted.url, referer);
-          const dataUri = buildSubtitleHlsDataUri(extracted.url, masterText, subtitles);
-          if (dataUri) {
-            streamUrl = dataUri;
-            console.log(`[Dizibal v1.2.0] embedSubs: ${subtitles.length} altyaz\u0131 manifest'e g\xF6m\xFCld\xFC`);
-          }
-        } catch (e) {
-          console.error("[Dizibal v1.2.0] embedSubs hatas\u0131, orijinal url kullan\u0131l\u0131yor:", e && e.message ? e.message : e);
+        const edl = buildMpvEdlUrl(extracted.url, subtitles);
+        if (edl) {
+          streamUrl = edl;
+          console.log(`[Dizibal v1.2.1] embedSubs: ${subtitles.length} altyaz\u0131 edl:// ile birle\u015Ftirildi`);
         }
       }
       return [{

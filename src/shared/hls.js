@@ -1,99 +1,66 @@
 // Desktop (Nuvio Kotlin/MPV) native player, sağlayıcının döndürdüğü
-// externalSubtitles listesini MPV'ye iletmiyor (app bug; PR #168). Workaround:
-// altyazıyı HLS master playlist'in İÇİNE bir SUBTITLES rendition olarak gömüp
-// tüm stream'i bir `data:` URI olarak döndürmek — MPV in-manifest altyazıyı
-// otomatik yükler, app düzeltmesine gerek kalmaz. Sadece kullanıcı ayarı
-// açıkken uygulanır; kapalıyken normal davranış korunur (TV/Android bozulmaz).
+// externalSubtitles listesini MPV'ye iletmiyor (app bug; PR #168 merge edilmedi),
+// bu yüzden altyazılar TV/Android'de çalışırken desktop'ta hiç görünmüyor.
+//
+// Workaround: video + harici altyazıları mpv'nin `edl://` protokolüyle TEK bir
+// URL'de birleştirmek. mpv EDL, HLS videoyu ve WebVTT/SRT altyazıları ayrı
+// "stream"ler olarak birleştirip player menüsünde seçilebilir track yapıyor —
+// app düzeltmesine gerek kalmadan. (mpv ile ampirik olarak doğrulandı.)
+//
+// DİKKAT: edl:// yalnızca mpv'ye özgüdür; Android ExoPlayer anlamaz. O yüzden
+// bu SADECE kullanıcı ayarı açıkken (desktop) uygulanmalı; kapalıyken normal
+// url + externalSubtitles yolu korunur, TV/Android bozulmaz.
 
-function absolutize(url, baseUrl) {
-    const u = String(url || '').trim();
-    if (/^https?:\/\//i.test(u) || /^data:/i.test(u)) return u;
-    const base = String(baseUrl || '');
-    if (u.startsWith('/')) {
-        const m = base.match(/^(https?:\/\/[^/]+)/i);
-        return m ? m[1] + u : u;
+// Hermes-güvenli UTF-8 byte uzunluğu (mpv EDL %len% önekini byte ister).
+function utf8ByteLength(str) {
+    let bytes = 0;
+    for (let i = 0; i < str.length; i++) {
+        const c = str.charCodeAt(i);
+        if (c < 0x80) bytes += 1;
+        else if (c < 0x800) bytes += 2;
+        else if (c >= 0xd800 && c <= 0xdbff) { bytes += 4; i++; } // surrogate pair
+        else bytes += 3;
     }
-    const slash = base.lastIndexOf('/');
-    return slash >= 0 ? base.slice(0, slash + 1) + u : u;
+    return bytes;
 }
 
-// Tek bir .vtt/.srt'yi saran HLS altyazı medya playlist'i (data: URI).
-function subtitlePlaylistDataUri(subUrl) {
-    const playlist = [
-        '#EXTM3U',
-        '#EXT-X-VERSION:3',
-        '#EXT-X-TARGETDURATION:99999',
-        '#EXT-X-MEDIA-SEQUENCE:0',
-        '#EXT-X-PLAYLIST-TYPE:VOD',
-        '#EXTINF:99999.0,',
-        subUrl,
-        '#EXT-X-ENDLIST',
-        ''
-    ].join('\n');
-    return 'data:application/vnd.apple.mpegurl,' + encodeURIComponent(playlist);
+// mpv EDL, özel karakterli (&, =, ; ...) dizeleri %<byte-uzunluk>%<dize> ile alır.
+function edlQuote(str) {
+    const s = String(str || '');
+    return `%${utf8ByteLength(s)}%${s}`;
 }
 
-function subMediaLine(sub, groupId, isDefault) {
-    const lang = sub.lang || sub.language || 'und';
-    const name = (sub.label || sub.name || lang).replace(/"/g, '');
-    const uri = subtitlePlaylistDataUri(sub.url);
-    return `#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="${groupId}",NAME="${name}",` +
-        `DEFAULT=${isDefault ? 'YES' : 'NO'},AUTOSELECT=YES,FORCED=NO,` +
-        `LANGUAGE="${lang}",URI="${uri}"`;
+// track_meta title/lang length-prefixed DEĞİL; EDL ayraçlarını (; ,) temizle.
+function metaSafe(str) {
+    return String(str || '').replace(/[;,]/g, ' ').trim();
 }
 
-// masterText: uzak master playlist'in ham metni. Variant'ları (ve varsa audio
-// rendition'larını) aynen koruyup her #EXT-X-STREAM-INF'e SUBTITLES grubunu
-// bağlar, başa da altyazı medya satırlarını ekler. Sonucu data: URI döndürür.
-// Master değilse (medya playlist) ya da altyazı yoksa null döner (çağıran orijinali kullanır).
-export function buildSubtitleHlsDataUri(masterUrl, masterText, subtitles) {
+function subCodec(sub) {
+    const fmt = String(sub.format || '').toLowerCase();
+    if (fmt === 'srt' || /\.srt(\?|$)/i.test(sub.url || '')) return 'subrip';
+    return 'webvtt';
+}
+
+// videoUrl (m3u8/mp4) + subtitles([{url,lang,label,format}]) → tek edl:// URL.
+// Altyazı yoksa null (çağıran orijinal url'yi kullanır).
+export function buildMpvEdlUrl(videoUrl, subtitles) {
     const subs = (subtitles || []).filter(s => s && s.url && /^https?:\/\//i.test(s.url));
-    if (!subs.length) return null;
-    const text = String(masterText || '');
-    if (!/#EXT-X-STREAM-INF/i.test(text)) return null; // medya playlist: gömme yapılamaz
+    if (!videoUrl || !subs.length) return null;
 
-    const groupId = 'subs';
-    // Türkçe altyazı varsa onu varsayılan seç, yoksa ilkini.
-    let defaultIdx = subs.findIndex(s => /^tr/i.test(s.lang || s.language || ''));
-    if (defaultIdx < 0) defaultIdx = 0;
+    // Türkçe varsa öne al (mpv ilk sub'ı varsayılan seçmez ama sıralama tutarlı olsun).
+    subs.sort((a, b) => {
+        const at = /^tr/i.test(a.lang || a.language || '') ? 0 : 1;
+        const bt = /^tr/i.test(b.lang || b.language || '') ? 0 : 1;
+        return at - bt;
+    });
 
-    const lines = text.split(/\r?\n/);
-    const out = [];
-    let injected = false;
-
-    for (let i = 0; i < lines.length; i++) {
-        let line = lines[i];
-
-        if (/^#EXTM3U/i.test(line) && !injected) {
-            out.push(line);
-            subs.forEach((sub, idx) => out.push(subMediaLine(sub, groupId, idx === defaultIdx)));
-            injected = true;
-            continue;
-        }
-
-        // Variant satırına altyazı grubunu bağla.
-        if (/^#EXT-X-STREAM-INF/i.test(line)) {
-            if (!/SUBTITLES=/i.test(line)) line = line + `,SUBTITLES="${groupId}"`;
-            out.push(line);
-            // Bir sonraki boş olmayan satır variant URI'sidir; mutlaklaştır.
-            if (i + 1 < lines.length) {
-                const uriLine = lines[i + 1];
-                if (uriLine && !uriLine.startsWith('#')) {
-                    out.push(absolutize(uriLine, masterUrl));
-                    i++;
-                }
-            }
-            continue;
-        }
-
-        // Audio vb. EXT-X-MEDIA URI'lerini mutlaklaştır.
-        if (/^#EXT-X-MEDIA/i.test(line) && /URI="/i.test(line)) {
-            line = line.replace(/URI="([^"]+)"/i, (_, u) => `URI="${absolutize(u, masterUrl)}"`);
-        }
-
-        out.push(line);
+    let edl = 'edl://!no_clip;' + edlQuote(videoUrl);
+    for (const sub of subs) {
+        const lang = metaSafe(sub.lang || sub.language || 'und');
+        const title = metaSafe(sub.label || sub.name || lang) || lang;
+        edl += ';!new_stream;!no_clip;!delay_open,media_type=sub,codec=' + subCodec(sub) +
+            ';!track_meta,title=' + title + ',lang=' + lang +
+            ';' + edlQuote(sub.url);
     }
-
-    if (!injected) return null;
-    return 'data:application/vnd.apple.mpegurl,' + encodeURIComponent(out.join('\n'));
+    return edl;
 }
