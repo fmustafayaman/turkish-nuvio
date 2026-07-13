@@ -1,5 +1,18 @@
 import { getTmdbInfo } from '../shared/tmdb.js';
 import { withTimeout, timeoutSignal, DEFAULT_TIMEOUT_MS } from '../shared/http.js';
+import { buildSubtitleHlsDataUri } from '../shared/hls.js';
+
+// Kullanıcı ayarı: desktop'ta MPV external altyazıyı yüklemediği için (PR #168
+// merge edilmedi) altyazıyı HLS master'ına gömme modu. Varsayılan kapalı;
+// yalnızca desktop kullanıcısı açar, TV/Android eskisi gibi kalır.
+function readSetting(key) {
+    try {
+        const s = typeof globalThis !== 'undefined' ? globalThis.SCRAPER_SETTINGS : null;
+        return s ? s[key] : undefined;
+    } catch {
+        return undefined;
+    }
+}
 
 const BASE_URL = 'https://dizibal.com';
 
@@ -257,7 +270,7 @@ async function resolveTarget(tmdbId, mediaType, season, episode) {
 
 async function getStreams(tmdbId, mediaType = 'movie', season = 1, episode = 1) {
     try {
-        console.log(`[Dizibal v1.1.0] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
+        console.log(`[Dizibal v1.2.0] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
         const resolved = await resolveTarget(tmdbId, mediaType, season, episode);
         if (!resolved) return [];
 
@@ -270,10 +283,26 @@ async function getStreams(tmdbId, mediaType = 'movie', season = 1, episode = 1) 
             .map(sub => normalizeSubtitle(sub, referer))
             .filter(Boolean);
 
+        let streamUrl = extracted.url;
+
+        // Desktop altyazı modu: altyazıyı HLS master'ına gömüp data: URI döndür.
+        if (readSetting('embedSubs') && subtitles.length) {
+            try {
+                const masterText = await fetchText(extracted.url, referer);
+                const dataUri = buildSubtitleHlsDataUri(extracted.url, masterText, subtitles);
+                if (dataUri) {
+                    streamUrl = dataUri;
+                    console.log(`[Dizibal v1.2.0] embedSubs: ${subtitles.length} altyazı manifest'e gömüldü`);
+                }
+            } catch (e) {
+                console.error('[Dizibal v1.2.0] embedSubs hatası, orijinal url kullanılıyor:', e && e.message ? e.message : e);
+            }
+        }
+
         return [{
             name: 'Dizibal',
             title: resolved.mediaTitle,
-            url: extracted.url,
+            url: streamUrl,
             quality: 'Auto',
             provider: 'dizibal',
             type: 'm3u8',
@@ -283,6 +312,20 @@ async function getStreams(tmdbId, mediaType = 'movie', season = 1, episode = 1) 
     } catch {
         return [];
     }
+}
+
+// Nuvio, plugin ayarlarını bu layout'a göre çizer; değerler globalThis.SCRAPER_SETTINGS'e gelir.
+async function onSettings() {
+    return [
+        { type: 'header', label: 'Desktop Altyazı' },
+        {
+            type: 'toggle',
+            key: 'embedSubs',
+            label: 'Altyazıyı stream içine göm (Desktop)',
+            description: 'Nuvio Desktop (MPV) external altyazıyı yüklemiyor. Bunu AÇARSAN altyazı HLS akışının içine gömülür ve player menüsünde görünür. TV/Android\'de gerekmez, kapalı bırak.',
+            defaultValue: false
+        }
+    ];
 }
 
 async function getSubtitles(tmdbId, mediaType = 'movie', season = 1, episode = 1) {
@@ -303,4 +346,4 @@ async function getSubtitles(tmdbId, mediaType = 'movie', season = 1, episode = 1
     }
 }
 
-module.exports = { getStreams, getSubtitles };
+module.exports = { getStreams, getSubtitles, onSettings };

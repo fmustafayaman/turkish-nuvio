@@ -1,6 +1,6 @@
 /**
  * dizibal - Built from src/dizibal/
- * Generated: 2026-07-13T10:56:16.614Z
+ * Generated: 2026-07-13T12:22:00.918Z
  */
 var __defProp = Object.defineProperty;
 var __getOwnPropSymbols = Object.getOwnPropertySymbols;
@@ -154,7 +154,93 @@ function getTmdbInfo(tmdbId, mediaType) {
   });
 }
 
+// src/shared/hls.js
+function absolutize(url, baseUrl) {
+  const u = String(url || "").trim();
+  if (/^https?:\/\//i.test(u) || /^data:/i.test(u))
+    return u;
+  const base = String(baseUrl || "");
+  if (u.startsWith("/")) {
+    const m = base.match(/^(https?:\/\/[^/]+)/i);
+    return m ? m[1] + u : u;
+  }
+  const slash = base.lastIndexOf("/");
+  return slash >= 0 ? base.slice(0, slash + 1) + u : u;
+}
+function subtitlePlaylistDataUri(subUrl) {
+  const playlist = [
+    "#EXTM3U",
+    "#EXT-X-VERSION:3",
+    "#EXT-X-TARGETDURATION:99999",
+    "#EXT-X-MEDIA-SEQUENCE:0",
+    "#EXT-X-PLAYLIST-TYPE:VOD",
+    "#EXTINF:99999.0,",
+    subUrl,
+    "#EXT-X-ENDLIST",
+    ""
+  ].join("\n");
+  return "data:application/vnd.apple.mpegurl," + encodeURIComponent(playlist);
+}
+function subMediaLine(sub, groupId, isDefault) {
+  const lang = sub.lang || sub.language || "und";
+  const name = (sub.label || sub.name || lang).replace(/"/g, "");
+  const uri = subtitlePlaylistDataUri(sub.url);
+  return `#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="${groupId}",NAME="${name}",DEFAULT=${isDefault ? "YES" : "NO"},AUTOSELECT=YES,FORCED=NO,LANGUAGE="${lang}",URI="${uri}"`;
+}
+function buildSubtitleHlsDataUri(masterUrl, masterText, subtitles) {
+  const subs = (subtitles || []).filter((s) => s && s.url && /^https?:\/\//i.test(s.url));
+  if (!subs.length)
+    return null;
+  const text = String(masterText || "");
+  if (!/#EXT-X-STREAM-INF/i.test(text))
+    return null;
+  const groupId = "subs";
+  let defaultIdx = subs.findIndex((s) => /^tr/i.test(s.lang || s.language || ""));
+  if (defaultIdx < 0)
+    defaultIdx = 0;
+  const lines = text.split(/\r?\n/);
+  const out = [];
+  let injected = false;
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i];
+    if (/^#EXTM3U/i.test(line) && !injected) {
+      out.push(line);
+      subs.forEach((sub, idx) => out.push(subMediaLine(sub, groupId, idx === defaultIdx)));
+      injected = true;
+      continue;
+    }
+    if (/^#EXT-X-STREAM-INF/i.test(line)) {
+      if (!/SUBTITLES=/i.test(line))
+        line = line + `,SUBTITLES="${groupId}"`;
+      out.push(line);
+      if (i + 1 < lines.length) {
+        const uriLine = lines[i + 1];
+        if (uriLine && !uriLine.startsWith("#")) {
+          out.push(absolutize(uriLine, masterUrl));
+          i++;
+        }
+      }
+      continue;
+    }
+    if (/^#EXT-X-MEDIA/i.test(line) && /URI="/i.test(line)) {
+      line = line.replace(/URI="([^"]+)"/i, (_, u) => `URI="${absolutize(u, masterUrl)}"`);
+    }
+    out.push(line);
+  }
+  if (!injected)
+    return null;
+  return "data:application/vnd.apple.mpegurl," + encodeURIComponent(out.join("\n"));
+}
+
 // src/dizibal/index.js
+function readSetting(key) {
+  try {
+    const s = typeof globalThis !== "undefined" ? globalThis.SCRAPER_SETTINGS : null;
+    return s ? s[key] : void 0;
+  } catch (e) {
+    return void 0;
+  }
+}
 var BASE_URL = "https://dizibal.com";
 var HEADERS = {
   "User-Agent": "Mozilla/5.0",
@@ -405,7 +491,7 @@ function resolveTarget(tmdbId, mediaType, season, episode) {
 function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
   return __async(this, null, function* () {
     try {
-      console.log(`[Dizibal v1.1.0] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
+      console.log(`[Dizibal v1.2.0] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
       const resolved = yield resolveTarget(tmdbId, mediaType, season, episode);
       if (!resolved)
         return [];
@@ -414,10 +500,23 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
         return [];
       const referer = extracted.embedOrigin ? `${extracted.embedOrigin}/` : `${BASE_URL}/`;
       const subtitles = extracted.subtitles.map((sub) => normalizeSubtitle(sub, referer)).filter(Boolean);
+      let streamUrl = extracted.url;
+      if (readSetting("embedSubs") && subtitles.length) {
+        try {
+          const masterText = yield fetchText(extracted.url, referer);
+          const dataUri = buildSubtitleHlsDataUri(extracted.url, masterText, subtitles);
+          if (dataUri) {
+            streamUrl = dataUri;
+            console.log(`[Dizibal v1.2.0] embedSubs: ${subtitles.length} altyaz\u0131 manifest'e g\xF6m\xFCld\xFC`);
+          }
+        } catch (e) {
+          console.error("[Dizibal v1.2.0] embedSubs hatas\u0131, orijinal url kullan\u0131l\u0131yor:", e && e.message ? e.message : e);
+        }
+      }
       return [{
         name: "Dizibal",
         title: resolved.mediaTitle,
-        url: extracted.url,
+        url: streamUrl,
         quality: "Auto",
         provider: "dizibal",
         type: "m3u8",
@@ -427,6 +526,20 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
     } catch (e) {
       return [];
     }
+  });
+}
+function onSettings() {
+  return __async(this, null, function* () {
+    return [
+      { type: "header", label: "Desktop Altyaz\u0131" },
+      {
+        type: "toggle",
+        key: "embedSubs",
+        label: "Altyaz\u0131y\u0131 stream i\xE7ine g\xF6m (Desktop)",
+        description: "Nuvio Desktop (MPV) external altyaz\u0131y\u0131 y\xFCklemiyor. Bunu A\xC7ARSAN altyaz\u0131 HLS ak\u0131\u015F\u0131n\u0131n i\xE7ine g\xF6m\xFCl\xFCr ve player men\xFCs\xFCnde g\xF6r\xFCn\xFCr. TV/Android'de gerekmez, kapal\u0131 b\u0131rak.",
+        defaultValue: false
+      }
+    ];
   });
 }
 function getSubtitles(tmdbId, mediaType = "movie", season = 1, episode = 1) {
@@ -449,4 +562,4 @@ function getSubtitles(tmdbId, mediaType = "movie", season = 1, episode = 1) {
     }
   });
 }
-module.exports = { getStreams, getSubtitles };
+module.exports = { getStreams, getSubtitles, onSettings };
