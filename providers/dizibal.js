@@ -1,6 +1,6 @@
 /**
  * dizibal - Built from src/dizibal/
- * Generated: 2026-06-29T12:57:07.123Z
+ * Generated: 2026-07-13T10:14:26.878Z
  */
 var __defProp = Object.defineProperty;
 var __getOwnPropSymbols = Object.getOwnPropertySymbols;
@@ -188,6 +188,62 @@ function fetchJson2(path) {
     }))(), DEFAULT_TIMEOUT_MS, path);
   });
 }
+function originOf(url) {
+  const match = String(url || "").match(/^(https?:\/\/[^/]+)/i);
+  return match ? match[1] : "";
+}
+function fetchText(url, referer) {
+  return __async(this, null, function* () {
+    return yield withTimeout((() => __async(this, null, function* () {
+      const response = yield fetch(url, {
+        headers: {
+          "User-Agent": HEADERS["User-Agent"],
+          "Accept": "*/*",
+          "Accept-Language": HEADERS["Accept-Language"],
+          "Referer": referer || `${BASE_URL}/`
+        },
+        signal: timeoutSignal(DEFAULT_TIMEOUT_MS)
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} on ${url}`);
+      }
+      return yield response.text();
+    }))(), DEFAULT_TIMEOUT_MS, url);
+  });
+}
+function fetchJsonAt(url, referer, origin) {
+  return __async(this, null, function* () {
+    return yield withTimeout((() => __async(this, null, function* () {
+      const headers = {
+        "User-Agent": HEADERS["User-Agent"],
+        "Accept": "*/*",
+        "Referer": referer || `${BASE_URL}/`
+      };
+      if (origin)
+        headers["Origin"] = origin;
+      const response = yield fetch(url, { headers, signal: timeoutSignal(DEFAULT_TIMEOUT_MS) });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} on ${url}`);
+      }
+      return yield response.json();
+    }))(), DEFAULT_TIMEOUT_MS, url);
+  });
+}
+function parseEmbedSubtitles(html) {
+  const match = html.match(/["']subtitle["']\s*:\s*"([^"]*)"/i);
+  if (!match || !match[1])
+    return [];
+  return match[1].split(",").map((part) => {
+    const m = part.match(/^\s*\[([^\]]*)\]\s*(\S+)\s*$/);
+    if (!m)
+      return null;
+    const label = m[1].trim();
+    const url = m[2].trim();
+    const key = normalizeTitle(label);
+    const lang = /turk|tr/.test(key) ? "tr" : /ing|eng|^en/.test(key) ? "en" : key || "und";
+    return { url, label, lang };
+  }).filter(Boolean);
+}
 function apiPath(path, params = {}) {
   const query = Object.keys(params).filter((key) => params[key] !== void 0 && params[key] !== null && params[key] !== "").map((key) => `${encodeURIComponent(key)}=${encodeURIComponent(params[key])}`).join("&");
   return `${path}${query ? `?${query}` : ""}`;
@@ -259,17 +315,33 @@ function fetchStreamConfig(item, type, season, episode) {
     return data.data || null;
   });
 }
-function fetchM3u8(src) {
+function fetchM3u8(config) {
   return __async(this, null, function* () {
-    const data = yield fetchJson2(apiPath("/api/stream/m3u8", {
-      code: src,
-      siteMode: "full"
-    }));
-    if (!data || data.success === false || !data.m3u8Url)
+    const embedUrl = config && config.streamUrl;
+    if (!embedUrl)
+      return null;
+    const origin = originOf(embedUrl);
+    let html;
+    try {
+      html = yield fetchText(embedUrl, `${BASE_URL}/`);
+    } catch (e) {
+      return null;
+    }
+    const streamParams = (html.match(/op=get_stream&view_id=\d+&hash=[0-9a-f-]+/i) || [])[0];
+    if (!streamParams)
+      return null;
+    let data;
+    try {
+      data = yield fetchJsonAt(`${origin}/dl?${streamParams}`, embedUrl, origin);
+    } catch (e) {
+      return null;
+    }
+    if (!data || !data.url)
       return null;
     return {
-      url: data.m3u8Url,
-      subtitles: Array.isArray(data.subtitles) ? data.subtitles : []
+      url: data.url,
+      embedOrigin: origin,
+      subtitles: parseEmbedSubtitles(html)
     };
   });
 }
@@ -321,10 +393,10 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
       const resolved = yield resolveTarget(tmdbId, mediaType, season, episode);
       if (!resolved)
         return [];
-      const extracted = yield fetchM3u8(resolved.config.src);
+      const extracted = yield fetchM3u8(resolved.config);
       if (!extracted || !extracted.url)
         return [];
-      const referer = resolved.config.streamUrl || `${BASE_URL}/`;
+      const referer = extracted.embedOrigin ? `${extracted.embedOrigin}/` : `${BASE_URL}/`;
       const subtitles = extracted.subtitles.map((sub) => normalizeSubtitle(sub, referer)).filter(Boolean);
       return [{
         name: "Dizibal",

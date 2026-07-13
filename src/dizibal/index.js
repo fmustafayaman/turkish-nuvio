@@ -41,6 +41,61 @@ async function fetchJson(path) {
     })(), DEFAULT_TIMEOUT_MS, path);
 }
 
+// Hermes'te URL sınıfı yok; origin'i (scheme://host) elle çıkarıyoruz.
+function originOf(url) {
+    const match = String(url || '').match(/^(https?:\/\/[^/]+)/i);
+    return match ? match[1] : '';
+}
+
+async function fetchText(url, referer) {
+    return await withTimeout((async () => {
+        const response = await fetch(url, {
+            headers: {
+                'User-Agent': HEADERS['User-Agent'],
+                'Accept': '*/*',
+                'Accept-Language': HEADERS['Accept-Language'],
+                'Referer': referer || `${BASE_URL}/`
+            },
+            signal: timeoutSignal(DEFAULT_TIMEOUT_MS)
+        });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status} on ${url}`);
+        }
+        return await response.text();
+    })(), DEFAULT_TIMEOUT_MS, url);
+}
+
+async function fetchJsonAt(url, referer, origin) {
+    return await withTimeout((async () => {
+        const headers = {
+            'User-Agent': HEADERS['User-Agent'],
+            'Accept': '*/*',
+            'Referer': referer || `${BASE_URL}/`
+        };
+        if (origin) headers['Origin'] = origin;
+        const response = await fetch(url, { headers, signal: timeoutSignal(DEFAULT_TIMEOUT_MS) });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status} on ${url}`);
+        }
+        return await response.json();
+    })(), DEFAULT_TIMEOUT_MS, url);
+}
+
+// Embed HTML'inden playerjs subtitle listesini çıkarır: "[Dil]url,[Dil]url"
+function parseEmbedSubtitles(html) {
+    const match = html.match(/["']subtitle["']\s*:\s*"([^"]*)"/i);
+    if (!match || !match[1]) return [];
+    return match[1].split(',').map(part => {
+        const m = part.match(/^\s*\[([^\]]*)\]\s*(\S+)\s*$/);
+        if (!m) return null;
+        const label = m[1].trim();
+        const url = m[2].trim();
+        const key = normalizeTitle(label); // Türkçe karakterleri ASCII'ye indirger
+        const lang = /turk|tr/.test(key) ? 'tr' : (/ing|eng|^en/.test(key) ? 'en' : (key || 'und'));
+        return { url, label, lang };
+    }).filter(Boolean);
+}
+
 function apiPath(path, params = {}) {
     const query = Object.keys(params)
         .filter(key => params[key] !== undefined && params[key] !== null && params[key] !== '')
@@ -119,15 +174,37 @@ async function fetchStreamConfig(item, type, season, episode) {
     return data.data || null;
 }
 
-async function fetchM3u8(src) {
-    const data = await fetchJson(apiPath('/api/stream/m3u8', {
-        code: src,
-        siteMode: 'full'
-    }));
-    if (!data || data.success === false || !data.m3u8Url) return null;
+// Dizibal artık m3u8'i kendi API'sinde çözmüyor; stream config harici bir
+// PlayerJS embed host'una (ör. x.ag2m4.cfd) ait streamUrl veriyor. Gerçek m3u8
+// o embed sayfasındaki `/dl?op=get_stream&view_id=...&hash=...` çağrısıyla,
+// host origin'i Origin header'ı olarak gönderilerek alınır.
+async function fetchM3u8(config) {
+    const embedUrl = config && config.streamUrl;
+    if (!embedUrl) return null;
+
+    const origin = originOf(embedUrl);
+    let html;
+    try {
+        html = await fetchText(embedUrl, `${BASE_URL}/`);
+    } catch {
+        return null;
+    }
+
+    const streamParams = (html.match(/op=get_stream&view_id=\d+&hash=[0-9a-f-]+/i) || [])[0];
+    if (!streamParams) return null;
+
+    let data;
+    try {
+        data = await fetchJsonAt(`${origin}/dl?${streamParams}`, embedUrl, origin);
+    } catch {
+        return null;
+    }
+    if (!data || !data.url) return null;
+
     return {
-        url: data.m3u8Url,
-        subtitles: Array.isArray(data.subtitles) ? data.subtitles : []
+        url: data.url,
+        embedOrigin: origin,
+        subtitles: parseEmbedSubtitles(html)
     };
 }
 
@@ -183,10 +260,11 @@ async function getStreams(tmdbId, mediaType = 'movie', season = 1, episode = 1) 
         const resolved = await resolveTarget(tmdbId, mediaType, season, episode);
         if (!resolved) return [];
 
-        const extracted = await fetchM3u8(resolved.config.src);
+        const extracted = await fetchM3u8(resolved.config);
         if (!extracted || !extracted.url) return [];
 
-        const referer = resolved.config.streamUrl || `${BASE_URL}/`;
+        // m3u8 CDN'i embed host'unun Referer'ını ister; origin seviyesi yeterli.
+        const referer = extracted.embedOrigin ? `${extracted.embedOrigin}/` : `${BASE_URL}/`;
         const subtitles = extracted.subtitles
             .map(sub => normalizeSubtitle(sub, referer))
             .filter(Boolean);
