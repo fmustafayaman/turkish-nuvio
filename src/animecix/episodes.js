@@ -31,9 +31,15 @@ export async function findByTmdbId(tmdbId, title, originalTitle, mediaType = 'tv
         const tmdbMatch = results.find(r => r.tmdb_id && Number(r.tmdb_id) === Number(tmdbId));
         if (tmdbMatch) return tmdbMatch;
 
-        // İkincil: başlık güçlü eşleşmesi (yalnızca TMDB ID yoksa kullanılır)
+        // İkincil: başlık güçlü eşleşmesi (yalnızca TMDB ID yoksa kullanılır).
+        // Sonucun kendi tmdb_id'si var ve istenenle çakışıyorsa bu FARKLI bir
+        // yapımdır (ör. "Rick and Morty" araması → "Rick and Morty: The Anime",
+        // tmdb_id 202282 ≠ 60625) — alt-dize eşleşse bile ele.
         if (!titleCandidate) {
-            titleCandidate = results.find(r => titlesMatch(tmdbTitles, resultTitles(r))) || null;
+            titleCandidate = results.find(r =>
+                !(r.tmdb_id && Number(r.tmdb_id) !== Number(tmdbId)) &&
+                titlesMatch(tmdbTitles, resultTitles(r))
+            ) || null;
         }
     }
 

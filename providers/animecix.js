@@ -1,6 +1,6 @@
 /**
  * animecix - Built from src/animecix/
- * Generated: 2026-07-16T12:00:41.980Z
+ * Generated: 2026-07-16T13:56:22.026Z
  */
 var __defProp = Object.defineProperty;
 var __getOwnPropSymbols = Object.getOwnPropertySymbols;
@@ -286,7 +286,9 @@ function findByTmdbId(tmdbId, title, originalTitle, mediaType = "tv") {
       if (tmdbMatch)
         return tmdbMatch;
       if (!titleCandidate) {
-        titleCandidate = results.find((r) => titlesMatch(tmdbTitles, resultTitles(r))) || null;
+        titleCandidate = results.find(
+          (r) => !(r.tmdb_id && Number(r.tmdb_id) !== Number(tmdbId)) && titlesMatch(tmdbTitles, resultTitles(r))
+        ) || null;
       }
     }
     return titleCandidate;
@@ -535,7 +537,7 @@ function resolveSeries(tmdbId, mediaType) {
 function getStreams(tmdbId, mediaType = "tv", season = 1, episode = 1) {
   return __async(this, null, function* () {
     try {
-      console.log(`[Animecix v1.2.2] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
+      console.log(`[Animecix v1.2.3] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
       const resolved = yield resolveSeries(tmdbId, mediaType);
       if (!resolved)
         return [];

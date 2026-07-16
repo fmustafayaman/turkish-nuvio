@@ -1,12 +1,12 @@
 {
   "name": "Turkish Nuvio",
-  "version": "1.15.0",
+  "version": "1.16.0",
   "scrapers": [
     {
       "id": "animecix",
       "name": "Animecix",
       "description": "Türkçe anime kaynağı — animecix.tv",
-      "version": "1.2.2",
+      "version": "1.2.3",
       "author": "turkish-nuvio",
       "supportedTypes": [
         "movie",
@@ -52,7 +52,7 @@
       "id": "dizifilm",
       "name": "Dizifilm",
       "description": "Türkçe dublaj/altyazılı film ve dizi kaynağı — dizifilm.life",
-      "version": "1.6.0",
+      "version": "1.6.1",
       "author": "turkish-nuvio",
       "supportedTypes": [
         "movie",

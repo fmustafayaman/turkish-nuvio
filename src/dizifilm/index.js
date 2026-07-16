@@ -122,7 +122,7 @@ async function resolveEpisode(domain, candidate, tmdbId, season, episode) {
     const pageTmdb = parseTmdbId(payload);
     if (pageTmdb && String(pageTmdb) !== String(tmdbId)) return null;
 
-    const embeds = parseEpisodeEmbeds(payload);
+    const embeds = parseEpisodeEmbeds(payload, episode);
     if (!embeds.length) return null;
 
     return {
@@ -176,7 +176,7 @@ async function resolveTarget(tmdbId, mediaType, season, episode) {
 
 async function getStreams(tmdbId, mediaType = 'movie', season = 1, episode = 1) {
     try {
-        console.log(`[Dizifilm v1.6.0] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
+        console.log(`[Dizifilm v1.6.1] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
         const resolved = await resolveTarget(tmdbId, mediaType, season, episode);
         if (!resolved) return [];
         const mediaTitle = resolved.mediaTitle;

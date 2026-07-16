@@ -1,6 +1,6 @@
 /**
  * dizifilm - Built from src/dizifilm/
- * Generated: 2026-07-13T14:30:56.231Z
+ * Generated: 2026-07-16T13:56:22.069Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -315,15 +315,22 @@ function parseMovieParts(payload) {
     return parts;
   }
 }
-function parseEpisodeEmbeds(payload) {
+function parseEpisodeEmbeds(payload, episode) {
   const urls = [];
-  for (const key of ["embed_player_url_1", "embed_player_url_2"]) {
-    const match = new RegExp(`"${key}":"(https?:(?:\\\\/|/)[^"]+)"`).exec(payload || "");
-    if (match) {
-      const url = match[1].replace(/\\\//g, "/");
-      if (isPlayableEmbed(url))
-        urls.push(url);
+  const target = episode == null ? null : Number(episode);
+  const re = /"episode_number":(\d+)|"embed_player_url_[12]":"(https?:(?:\\\/|\/)[^"]+)"/g;
+  let currentEpisode = null;
+  let match;
+  while ((match = re.exec(payload || "")) !== null) {
+    if (match[1] !== void 0) {
+      currentEpisode = Number(match[1]);
+      continue;
     }
+    if (target !== null && currentEpisode !== target)
+      continue;
+    const url = match[2].replace(/\\\//g, "/");
+    if (isPlayableEmbed(url) && !urls.includes(url))
+      urls.push(url);
   }
   return urls;
 }
@@ -1282,7 +1289,7 @@ function resolveEpisode(domain, candidate, tmdbId, season, episode) {
     const pageTmdb = parseTmdbId(payload);
     if (pageTmdb && String(pageTmdb) !== String(tmdbId))
       return null;
-    const embeds = parseEpisodeEmbeds(payload);
+    const embeds = parseEpisodeEmbeds(payload, episode);
     if (!embeds.length)
       return null;
     return {
@@ -1334,7 +1341,7 @@ function resolveTarget(tmdbId, mediaType, season, episode) {
 function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
   return __async(this, null, function* () {
     try {
-      console.log(`[Dizifilm v1.6.0] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
+      console.log(`[Dizifilm v1.6.1] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
       const resolved = yield resolveTarget(tmdbId, mediaType, season, episode);
       if (!resolved)
         return [];

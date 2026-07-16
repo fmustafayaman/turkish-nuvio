@@ -63,14 +63,24 @@ export function parseMovieParts(payload) {
     }
 }
 
-export function parseEpisodeEmbeds(payload) {
+// Bölüm sayfasının RSC payload'ı sezondaki TÜM bölümlerin embed URL'lerini
+// içerir (bölüm listesi + prev/next nav). Embed'i, kendisinden önce gelen son
+// "episode_number" hedef bölümse al — yoksa payload'daki ilk embed hangi
+// bölümünse (genelde sezonun 1. bölümü) o oynar.
+export function parseEpisodeEmbeds(payload, episode) {
     const urls = [];
-    for (const key of ['embed_player_url_1', 'embed_player_url_2']) {
-        const match = new RegExp(`"${key}":"(https?:(?:\\\\/|/)[^"]+)"`).exec(payload || '');
-        if (match) {
-            const url = match[1].replace(/\\\//g, '/');
-            if (isPlayableEmbed(url)) urls.push(url);
+    const target = episode == null ? null : Number(episode);
+    const re = /"episode_number":(\d+)|"embed_player_url_[12]":"(https?:(?:\\\/|\/)[^"]+)"/g;
+    let currentEpisode = null;
+    let match;
+    while ((match = re.exec(payload || '')) !== null) {
+        if (match[1] !== undefined) {
+            currentEpisode = Number(match[1]);
+            continue;
         }
+        if (target !== null && currentEpisode !== target) continue;
+        const url = match[2].replace(/\\\//g, '/');
+        if (isPlayableEmbed(url) && !urls.includes(url)) urls.push(url);
     }
     return urls;
 }
