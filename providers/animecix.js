@@ -1,6 +1,6 @@
 /**
  * animecix - Built from src/animecix/
- * Generated: 2026-07-16T11:34:04.768Z
+ * Generated: 2026-07-16T12:00:41.980Z
  */
 var __defProp = Object.defineProperty;
 var __getOwnPropSymbols = Object.getOwnPropertySymbols;
@@ -359,8 +359,7 @@ function findEpisode(episodes, season, episode, mappedEpisode) {
   const candidates = [
     episodes.find((e) => e.seasonNum === season && e.episodeNum === episode),
     episodes.find((e) => e.episodeNum === mappedEpisode),
-    episodes.find((e) => e.episodeNum === episode),
-    episodes[episode - 1]
+    episodes.find((e) => e.episodeNum === episode)
   ];
   return candidates.find(Boolean) || null;
 }
@@ -536,7 +535,7 @@ function resolveSeries(tmdbId, mediaType) {
 function getStreams(tmdbId, mediaType = "tv", season = 1, episode = 1) {
   return __async(this, null, function* () {
     try {
-      console.log(`[Animecix v1.2.1] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
+      console.log(`[Animecix v1.2.2] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
       const resolved = yield resolveSeries(tmdbId, mediaType);
       if (!resolved)
         return [];

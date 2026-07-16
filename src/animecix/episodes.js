@@ -115,11 +115,12 @@ export async function getEpisodes(animeId, seasonNum = 1) {
 }
 
 export function findEpisode(episodes, season, episode, mappedEpisode) {
+    // Bilerek indeks fallback'i yok: numara eşleşmesi yoksa yanlış bölüm
+    // oynatmaktansa boş dönmek daha güvenli.
     const candidates = [
         episodes.find(e => e.seasonNum === season && e.episodeNum === episode),
         episodes.find(e => e.episodeNum === mappedEpisode),
-        episodes.find(e => e.episodeNum === episode),
-        episodes[episode - 1]
+        episodes.find(e => e.episodeNum === episode)
     ];
 
     return candidates.find(Boolean) || null;
