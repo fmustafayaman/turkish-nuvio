@@ -1,6 +1,6 @@
 /**
  * animecix - Built from src/animecix/
- * Generated: 2026-07-13T18:22:00.488Z
+ * Generated: 2026-07-16T11:34:04.768Z
  */
 var __defProp = Object.defineProperty;
 var __getOwnPropSymbols = Object.getOwnPropertySymbols;
@@ -536,7 +536,7 @@ function resolveSeries(tmdbId, mediaType) {
 function getStreams(tmdbId, mediaType = "tv", season = 1, episode = 1) {
   return __async(this, null, function* () {
     try {
-      console.log(`[Animecix v1.2.0] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
+      console.log(`[Animecix v1.2.1] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
       const resolved = yield resolveSeries(tmdbId, mediaType);
       if (!resolved)
         return [];
@@ -554,16 +554,19 @@ function getStreams(tmdbId, mediaType = "tv", season = 1, episode = 1) {
         return directStreams;
       }
       console.log("[Animecix] episode-videos bo\u015F, mapping deneniyor");
+      let mappedEpisode = null;
       try {
         const imdbId = yield getImdbId(tmdbId, mediaType);
         if (imdbId) {
           const mapping = yield resolveEpisodeMapping(imdbId, s, e);
-          const mappedEpisode = mapping == null ? void 0 : mapping.mal_episode;
-          if (mappedEpisode && mappedEpisode !== e) {
-            const mappedStreams = yield extractEpisodeSources(animeId, s, mappedEpisode, animeTitle, `B\xF6l\xFCm ${e}`);
-            if (mappedStreams.length) {
-              console.log(`[Animecix] episode-videos (mapped ${mappedEpisode}) \u2192 ${mappedStreams.length} stream`);
-              return mappedStreams;
+          mappedEpisode = (mapping == null ? void 0 : mapping.mal_episode) || null;
+          if (mappedEpisode && !(mappedEpisode === e && s === 1)) {
+            for (const trySeason of [.../* @__PURE__ */ new Set([s, 1])]) {
+              const mappedStreams = yield extractEpisodeSources(animeId, trySeason, mappedEpisode, animeTitle, `B\xF6l\xFCm ${e}`);
+              if (mappedStreams.length) {
+                console.log(`[Animecix] episode-videos (mapped S${trySeason}E${mappedEpisode}) \u2192 ${mappedStreams.length} stream`);
+                return mappedStreams;
+              }
             }
           }
         }
@@ -574,7 +577,7 @@ function getStreams(tmdbId, mediaType = "tv", season = 1, episode = 1) {
       const episodes = yield getEpisodes(animeId, s);
       if (!episodes.length)
         return [];
-      const target = findEpisode(episodes, s, e, e);
+      const target = findEpisode(episodes, s, e, mappedEpisode || e);
       if (!(target == null ? void 0 : target.url))
         return [];
       const episodeLabel = target.name || `B\xF6l\xFCm ${target.episodeNum || e}`;

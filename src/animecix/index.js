@@ -42,7 +42,7 @@ async function resolveSeries(tmdbId, mediaType) {
 
 async function getStreams(tmdbId, mediaType = 'tv', season = 1, episode = 1) {
     try {
-        console.log(`[Animecix v1.2.0] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
+        console.log(`[Animecix v1.2.1] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
 
         const resolved = await resolveSeries(tmdbId, mediaType);
         if (!resolved) return [];
@@ -69,16 +69,22 @@ async function getStreams(tmdbId, mediaType = 'tv', season = 1, episode = 1) {
         // 2) Fallback: MAL bölüm eşlemesi (TMDB↔MAL numaralandırması farklıysa).
         // Riskli üçüncü-parti servise dokunur, yalnızca mutlu yol boşsa çalışır.
         console.log('[Animecix] episode-videos boş, mapping deneniyor');
+        let mappedEpisode = null;
         try {
             const imdbId = await getImdbId(tmdbId, mediaType);
             if (imdbId) {
                 const mapping = await resolveEpisodeMapping(imdbId, s, e);
-                const mappedEpisode = mapping?.mal_episode;
-                if (mappedEpisode && mappedEpisode !== e) {
-                    const mappedStreams = await extractEpisodeSources(animeId, s, mappedEpisode, animeTitle, `Bölüm ${e}`);
-                    if (mappedStreams.length) {
-                        console.log(`[Animecix] episode-videos (mapped ${mappedEpisode}) → ${mappedStreams.length} stream`);
-                        return mappedStreams;
+                mappedEpisode = mapping?.mal_episode || null;
+                if (mappedEpisode && !(mappedEpisode === e && s === 1)) {
+                    // MAL numarası mutlaktır; animecix uzun serileri tek sezonda mutlak
+                    // numarayla tutar (ör. One Piece S22E15 → S1E1100). Önce TMDB
+                    // sezonuyla, boşsa season=1 ile dene.
+                    for (const trySeason of [...new Set([s, 1])]) {
+                        const mappedStreams = await extractEpisodeSources(animeId, trySeason, mappedEpisode, animeTitle, `Bölüm ${e}`);
+                        if (mappedStreams.length) {
+                            console.log(`[Animecix] episode-videos (mapped S${trySeason}E${mappedEpisode}) → ${mappedStreams.length} stream`);
+                            return mappedStreams;
+                        }
                     }
                 }
             }
@@ -91,7 +97,7 @@ async function getStreams(tmdbId, mediaType = 'tv', season = 1, episode = 1) {
         const episodes = await getEpisodes(animeId, s);
         if (!episodes.length) return [];
 
-        const target = findEpisode(episodes, s, e, e);
+        const target = findEpisode(episodes, s, e, mappedEpisode || e);
         if (!target?.url) return [];
 
         const episodeLabel = target.name || `Bölüm ${target.episodeNum || e}`;
