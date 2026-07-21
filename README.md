@@ -75,8 +75,6 @@ build.js       # esbuild bundler
 server.js      # yerel geliştirme sunucusu
 ```
 
-Detaylı mimari notları için [CLAUDE.md](CLAUDE.md)'ye bakın.
-
 ## Katkı
 
 Pull request'ler memnuniyetle karşılanır. Yeni provider eklerken `src/<id>/` (+ `constants.js` vb.) oluşturup `manifest.json`'a scraper girdisi ekleyin, `npm run build` çalıştırıp `providers/<id>.js`'i commit edin.
