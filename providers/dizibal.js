@@ -1,6 +1,6 @@
 /**
  * dizibal - Built from src/dizibal/
- * Generated: 2026-07-16T13:56:22.065Z
+ * Generated: 2026-07-21T20:39:15.466Z
  */
 var __defProp = Object.defineProperty;
 var __getOwnPropSymbols = Object.getOwnPropertySymbols;
@@ -105,12 +105,31 @@ function withTimeout(promise, ms = DEFAULT_TIMEOUT_MS, label = "") {
 var DEFAULT_TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
 function getTmdbApiKey() {
   try {
+    const settings = typeof globalThis !== "undefined" ? globalThis.SCRAPER_SETTINGS : null;
+    const userKey = (settings == null ? void 0 : settings.tmdbApiKey) ? String(settings.tmdbApiKey).trim() : "";
+    if (userKey)
+      return userKey;
+  } catch (e) {
+  }
+  try {
     const injected = typeof globalThis !== "undefined" ? globalThis.TMDB_API_KEY : "";
     if (injected)
       return String(injected).trim();
   } catch (e) {
   }
   return DEFAULT_TMDB_API_KEY;
+}
+function tmdbApiKeySettingsLayout() {
+  return [
+    { type: "header", label: "TMDB API Anahtar\u0131 (opsiyonel)" },
+    {
+      type: "text",
+      key: "tmdbApiKey",
+      label: "Kendi TMDB API anahtar\u0131n",
+      description: "Bo\u015F b\u0131rak\u0131rsan payla\u015F\u0131lan varsay\u0131lan anahtar kullan\u0131l\u0131r. Kendi TMDB v3 API anahtar\u0131n\u0131 girersen (themoviedb.org hesab\u0131ndan \xFCcretsiz al\u0131n\u0131r) bu ekrandaki t\xFCm TMDB istekleri onunla yap\u0131l\u0131r.",
+      defaultValue: ""
+    }
+  ];
 }
 function fetchJson(_0) {
   return __async(this, arguments, function* (url, options = {}) {
@@ -624,7 +643,7 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
 }
 function onSettings() {
   return __async(this, null, function* () {
-    return embedSubsSettingsLayout();
+    return [...embedSubsSettingsLayout(), ...tmdbApiKeySettingsLayout()];
   });
 }
 function getSubtitles(tmdbId, mediaType = "movie", season = 1, episode = 1) {

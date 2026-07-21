@@ -2,6 +2,7 @@ import { getTmdbInfo, getImdbId, resolveEpisodeMapping } from './utils.js';
 import { findByTmdbId, getEpisodeVideos, getEpisodes, findEpisode } from './episodes.js';
 import { extractByEmbedId, parseEmbedIdFromUrl, extractStreams } from './extractor.js';
 import { createTtlCache } from '../shared/cache.js';
+import { tmdbApiKeySettingsLayout } from '../shared/tmdb.js';
 
 // Bir bölümün episode-videos listesindeki TÜM Tau Video kaynaklarını çözer.
 // Tek episode-videos çağrısı + kaynak başına bir tau-video API çağrısı; eski
@@ -108,4 +109,8 @@ async function getStreams(tmdbId, mediaType = 'tv', season = 1, episode = 1) {
     }
 }
 
-module.exports = { getStreams };
+async function onSettings() {
+    return tmdbApiKeySettingsLayout();
+}
+
+module.exports = { getStreams, onSettings };

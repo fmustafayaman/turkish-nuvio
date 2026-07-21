@@ -1,4 +1,4 @@
-import { getTmdbInfo } from '../shared/tmdb.js';
+import { getTmdbInfo, tmdbApiKeySettingsLayout } from '../shared/tmdb.js';
 import { DOMAIN_CANDIDATES } from './constants.js';
 import { fetchText, decodeScxLink, titlesMatch, normalizeTitle } from './utils.js';
 import { extractHost } from './extractors.js';
@@ -241,7 +241,7 @@ async function getSubtitles(tmdbId, mediaType = 'movie', season = 1, episode = 1
 }
 
 async function onSettings() {
-    return embedSubsSettingsLayout();
+    return [...embedSubsSettingsLayout(), ...tmdbApiKeySettingsLayout()];
 }
 
 module.exports = { getStreams, getSubtitles, onSettings };

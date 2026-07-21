@@ -1,4 +1,4 @@
-import { getTmdbInfo } from '../shared/tmdb.js';
+import { getTmdbInfo, tmdbApiKeySettingsLayout } from '../shared/tmdb.js';
 import { withTimeout, timeoutSignal, DEFAULT_TIMEOUT_MS } from '../shared/http.js';
 import { maybeEmbedSubsUrl, detectHlsQuality, embedSubsSettingsLayout } from '../shared/hls.js';
 
@@ -312,7 +312,7 @@ async function getStreams(tmdbId, mediaType = 'movie', season = 1, episode = 1) 
 
 // Nuvio, plugin ayarlarını bu layout'a göre çizer; değerler globalThis.SCRAPER_SETTINGS'e gelir.
 async function onSettings() {
-    return embedSubsSettingsLayout();
+    return [...embedSubsSettingsLayout(), ...tmdbApiKeySettingsLayout()];
 }
 
 async function getSubtitles(tmdbId, mediaType = 'movie', season = 1, episode = 1) {

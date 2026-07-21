@@ -2,11 +2,20 @@ import { withTimeout, timeoutSignal, DEFAULT_TIMEOUT_MS } from './http.js';
 
 // Nuvio plugin runtime'ı TMDB anahtarını provider'a enjekte ETMEZ; provider'lar
 // kendi anahtarını taşımak zorunda. Topluluk genelinde paylaşılan public TMDB
-// anahtarını kullanıyoruz (kişisel anahtar değil). Eğer runtime globalThis.TMDB_API_KEY
-// sağlıyorsa onu tercih ederiz.
+// anahtarını kullanıyoruz (kişisel anahtar değil). Kullanıcı isterse provider
+// ayarlarından kendi anahtarını girebilir (globalThis.SCRAPER_SETTINGS.tmdbApiKey);
+// girilirse o öncelikli kullanılır. Eğer runtime globalThis.TMDB_API_KEY sağlıyorsa
+// (kullanıcı ayarı yoksa) onu tercih ederiz.
 const DEFAULT_TMDB_API_KEY = '439c478a771f35c05022f9feabcca01c';
 
 export function getTmdbApiKey() {
+    try {
+        const settings = typeof globalThis !== 'undefined' ? globalThis.SCRAPER_SETTINGS : null;
+        const userKey = settings?.tmdbApiKey ? String(settings.tmdbApiKey).trim() : '';
+        if (userKey) return userKey;
+    } catch {
+        // ignore
+    }
     try {
         const injected = typeof globalThis !== 'undefined' ? globalThis.TMDB_API_KEY : '';
         if (injected) return String(injected).trim();
@@ -14,6 +23,22 @@ export function getTmdbApiKey() {
         // ignore
     }
     return DEFAULT_TMDB_API_KEY;
+}
+
+// Nuvio ayar diyaloğu için ortak "kendi TMDB anahtarını gir" alanı. Provider
+// bunu onSettings'ten (embedSubs vb. diğer alanlarla birlikte) döndürür;
+// manifest'te "hasSettings": true olmalı.
+export function tmdbApiKeySettingsLayout() {
+    return [
+        { type: 'header', label: 'TMDB API Anahtarı (opsiyonel)' },
+        {
+            type: 'text',
+            key: 'tmdbApiKey',
+            label: 'Kendi TMDB API anahtarın',
+            description: 'Boş bırakırsan paylaşılan varsayılan anahtar kullanılır. Kendi TMDB v3 API anahtarını girersen (themoviedb.org hesabından ücretsiz alınır) bu ekrandaki tüm TMDB istekleri onunla yapılır.',
+            defaultValue: ''
+        }
+    ];
 }
 
 export async function fetchJson(url, options = {}) {

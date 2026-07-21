@@ -22,6 +22,8 @@ https://raw.githubusercontent.com/fmustafayaman/turkish-nuvio/main/manifest.json
 | **Dizifilm** | dizifilm.life | Film + dizi | m3u8 |
 | **Dizibal** | dizibal.com | Film + dizi | m3u8 |
 
+Tüm provider'lar başlık/imdb bilgisi için TMDB kullanır; varsayılan olarak paylaşılan bir topluluk API anahtarı gömülüdür. İstersen her provider'ın Nuvio içindeki ayarlar ekranından ("TMDB API Anahtarı") kendi ücretsiz [TMDB API anahtarını](https://www.themoviedb.org/settings/api) girebilirsin — girilirse TMDB istekleri onunla yapılır, boş bırakılırsa varsayılan anahtar kullanılmaya devam eder.
+
 ## Geliştirme
 
 ```bash
