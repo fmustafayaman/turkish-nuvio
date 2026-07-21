@@ -7,8 +7,9 @@ on:
   workflow_dispatch: {}
 
 permissions:
-  contents: read
+  contents: write
   issues: write
+  pull-requests: write
 
 jobs:
   health-check:
@@ -20,16 +21,39 @@ jobs:
         with:
           node-version: '20'
 
+      - name: provider-health etiketini garanti et
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh label create provider-health --color d73a4a --description "Otomatik provider domain/test health check bulguları" --force
+
       - name: Install
         run: npm ci
 
       - name: Build
         run: npm run build
 
-      - name: Domain sağlık kontrolü
+      # --fix: sadece domain rotasyonunu (301/302 ile yeni domain'e taşınma)
+      # otomatik düzeltir — src/<id>/constants.js'teki DOMAIN_CANDIDATES
+      # sırasını canlı domain başa gelecek şekilde yazar. Site yapısı
+      # (HTML/API) değiştiyse bunu düzeltemez, aşağıdaki test adımları
+      # başarısız kalır ve issue açılır.
+      - name: Domain sağlık kontrolü (+ otomatik düzeltme)
         id: domains
         continue-on-error: true
-        run: npm run check:domains 2>&1 | tee domains.log
+        run: npm run check:domains -- --fix 2>&1 | tee domains.log
+
+      - name: Domain düzeltmesi var mı?
+        id: fix_diff
+        run: |
+          if git diff --quiet -- src/; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Bundle'ları yeniden derle (düzeltme varsa)
+        if: steps.fix_diff.outputs.changed == 'true'
+        run: npm run build
 
       - name: Animecix testi
         id: test_animecix
@@ -46,6 +70,41 @@ jobs:
         continue-on-error: true
         run: npm run test:dizifilm 2>&1 | tee test-dizifilm.log
 
+      # Domain otomatik düzeltildiyse VE tüm testler hâlâ geçiyorsa
+      # (yani sadece domain değişmiş, scraping mantığı bozulmamış):
+      # otomatik bir PR aç. Testlerden biri patlarsa PR açılmaz — o
+      # durumda site yapısı da değişmiş demektir, insan/LLM bakması gerekir.
+      - name: Otomatik domain-fix PR'ı aç
+        id: auto_pr
+        if: >
+          steps.fix_diff.outputs.changed == 'true' &&
+          steps.test_animecix.outcome != 'failure' &&
+          steps.test_fullhdfilm.outcome != 'failure' &&
+          steps.test_dizifilm.outcome != 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch="auto/domain-fix-${{ github.run_number }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add src/ providers/
+          git commit -m "fix: domain rotasyonunu otomatik güncelle" -m "Provider Health Check workflow'u tarafından otomatik oluşturuldu. check-domains.js --fix, DOMAIN_CANDIDATES içindeki olu/redirect eden domain'i guncel olanla degistirdi; build sonrasi tum test harness'lari gecti."
+          git push origin "$branch"
+          {
+            echo "Bu PR, Provider Health Check workflow'u (\`.github/workflows/health-check.yml\`) tarafından otomatik açıldı."
+            echo ""
+            echo "check-domains.js --fix, bir veya daha fazla provider'ın DOMAIN_CANDIDATES listesindeki artık redirect eden domain'i güncel domain ile değiştirdi. Fix sonrası tüm test harness'ları (animecix, fullhdfilm, dizifilm) geçti, yani sadece domain değişmiş; scraping mantığı hâlâ çalışıyor."
+            echo ""
+            echo "Değişiklik detayı için şu run'a bakın: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo ""
+            echo "Gözden geçirip merge edebilirsiniz."
+          } > /tmp/pr_body.md
+          gh pr create \
+            --title "fix: otomatik domain rotasyonu düzeltmesi" \
+            --body-file /tmp/pr_body.md \
+            --label "provider-health" || echo "pr_failed=true" >> "$GITHUB_OUTPUT"
+
       - name: Sonuçları raporla
         uses: actions/github-script@v7
         env:
@@ -53,6 +112,8 @@ jobs:
           ANIMECIX_OUTCOME: ${{ steps.test_animecix.outcome }}
           FULLHDFILM_OUTCOME: ${{ steps.test_fullhdfilm.outcome }}
           DIZIFILM_OUTCOME: ${{ steps.test_dizifilm.outcome }}
+          FIX_CHANGED: ${{ steps.fix_diff.outputs.changed }}
+          AUTO_PR_OUTCOME: ${{ steps.auto_pr.outcome }}
         with:
           script: |
             const fs = require('fs');
@@ -67,6 +128,9 @@ jobs:
             ];
 
             const failed = checks.filter(c => c.outcome === 'failure');
+            const fixAttempted = process.env.FIX_CHANGED === 'true';
+            const autoFixOpened = fixAttempted && process.env.AUTO_PR_OUTCOME === 'success';
+            const fixAttemptedButStillFailing = fixAttempted && !autoFixOpened;
 
             try {
               await github.rest.issues.createLabel({
@@ -91,11 +155,14 @@ jobs:
             if (failed.length === 0) {
               console.log('Tüm kontroller geçti.');
               if (existing) {
+                const note = autoFixOpened
+                  ? ` (domain rotasyonu otomatik düzeltildi, bkz. açılan PR)`
+                  : '';
                 await github.rest.issues.createComment({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   issue_number: existing.number,
-                  body: `✅ Bu run'da tüm kontroller geçti (run: ${context.runId}). Issue kapatılıyor.`,
+                  body: `✅ Bu run'da tüm kontroller geçti${note} (run: ${context.runId}). Issue kapatılıyor.`,
                 });
                 await github.rest.issues.update({
                   owner: context.repo.owner,
@@ -111,6 +178,7 @@ jobs:
               `Provider health check bazı kontrollerde başarısız oldu.`,
               ``,
               `**Çalıştırma:** ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              fixAttemptedButStillFailing ? `\nNot: Domain rotasyonu otomatik düzeltilmeye çalışıldı ama testler hâlâ başarısız — otomatik PR açılmadı, aşağıdaki hatalar muhtemelen site yapısı (HTML/API) değişikliğinden kaynaklanıyor ve elle/LLM ile bakılması gerekiyor.` : '',
               ``,
               ...failed.map(c => {
                 let log = '';
