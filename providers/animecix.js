@@ -1,6 +1,6 @@
 /**
  * animecix - Built from src/animecix/
- * Generated: 2026-07-21T20:39:15.433Z
+ * Generated: 2026-07-21T21:12:16.940Z
  */
 var __defProp = Object.defineProperty;
 var __getOwnPropSymbols = Object.getOwnPropertySymbols;
@@ -115,7 +115,43 @@ function withTimeout(promise, ms = DEFAULT_TIMEOUT_MS, label = "") {
   );
 }
 
+// src/shared/cache.js
+function createTtlCache(defaultTtlMs = 30 * 60 * 1e3, maxEntries = 200) {
+  const store = /* @__PURE__ */ new Map();
+  function get(key) {
+    const entry = store.get(key);
+    if (!entry)
+      return void 0;
+    if (entry.expires <= Date.now()) {
+      store.delete(key);
+      return void 0;
+    }
+    return entry.value;
+  }
+  function set(key, value, ttlMs = defaultTtlMs) {
+    if (store.size >= maxEntries) {
+      const oldest = store.keys().next().value;
+      if (oldest !== void 0)
+        store.delete(oldest);
+    }
+    store.set(key, { value, expires: Date.now() + ttlMs });
+  }
+  function remember(_0, _1) {
+    return __async(this, arguments, function* (key, fn, ttlMs = defaultTtlMs, isValid = (v) => v != null) {
+      const cached = get(key);
+      if (cached !== void 0)
+        return cached;
+      const value = yield fn();
+      if (isValid(value))
+        set(key, value, ttlMs);
+      return value;
+    });
+  }
+  return { get, set, remember };
+}
+
 // src/shared/tmdb.js
+var tmdbInfoCache = createTtlCache(30 * 60 * 1e3, 300);
 var DEFAULT_TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
 function getTmdbApiKey() {
   try {
@@ -481,41 +517,6 @@ function extractStreams(episodePath, animeTitle, episodeLabel) {
       type: entry.url.includes(".m3u8") ? "m3u8" : "mp4"
     }));
   });
-}
-
-// src/shared/cache.js
-function createTtlCache(defaultTtlMs = 30 * 60 * 1e3, maxEntries = 200) {
-  const store = /* @__PURE__ */ new Map();
-  function get(key) {
-    const entry = store.get(key);
-    if (!entry)
-      return void 0;
-    if (entry.expires <= Date.now()) {
-      store.delete(key);
-      return void 0;
-    }
-    return entry.value;
-  }
-  function set(key, value, ttlMs = defaultTtlMs) {
-    if (store.size >= maxEntries) {
-      const oldest = store.keys().next().value;
-      if (oldest !== void 0)
-        store.delete(oldest);
-    }
-    store.set(key, { value, expires: Date.now() + ttlMs });
-  }
-  function remember(_0, _1) {
-    return __async(this, arguments, function* (key, fn, ttlMs = defaultTtlMs, isValid = (v) => v != null) {
-      const cached = get(key);
-      if (cached !== void 0)
-        return cached;
-      const value = yield fn();
-      if (isValid(value))
-        set(key, value, ttlMs);
-      return value;
-    });
-  }
-  return { get, set, remember };
 }
 
 // src/animecix/index.js

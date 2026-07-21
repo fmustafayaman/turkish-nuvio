@@ -82,6 +82,8 @@ server.js      # yerel geliştirme sunucusu
 
 Pull request'ler memnuniyetle karşılanır. Yeni provider eklerken `src/<id>/` (+ `constants.js` vb.) oluşturup `manifest.json`'a scraper girdisi ekleyin, `npm run build` çalıştırıp `providers/<id>.js`'i commit edin.
 
+`npm install` sırasında `.githooks/pre-commit` otomatik kurulur: `src/<id>/` veya `providers/<id>.js` değiştiği halde `manifest.json`'da o provider'ın (veya `src/shared/` değiştiyse üst düzey) `version`'ı bump'lanmadıysa commit'i engeller — Nuvio prebuilt manifest kullandığından version artmazsa güncelleme fark edilmez. Gerekiyorsa `git commit --no-verify` ile atlanabilir.
+
 ## Sorumluluk reddi
 
 Bu proje yalnızca eğitim ve kişisel kullanım amaçlıdır. İçerik kaynaklarına ait telif hakları ilgili sahiplerindedir. Kullanıcı, yerel yasalara uygunluktan kendisi sorumludur.

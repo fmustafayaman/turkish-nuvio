@@ -1,8 +1,10 @@
 /**
  * dizibal - Built from src/dizibal/
- * Generated: 2026-07-21T20:39:15.466Z
+ * Generated: 2026-07-21T21:12:16.972Z
  */
 var __defProp = Object.defineProperty;
+var __defProps = Object.defineProperties;
+var __getOwnPropDescs = Object.getOwnPropertyDescriptors;
 var __getOwnPropSymbols = Object.getOwnPropertySymbols;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
 var __propIsEnum = Object.prototype.propertyIsEnumerable;
@@ -18,6 +20,7 @@ var __spreadValues = (a, b) => {
     }
   return a;
 };
+var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
 var __objRest = (source, exclude) => {
   var target = {};
   for (var prop in source)
@@ -101,7 +104,43 @@ function withTimeout(promise, ms = DEFAULT_TIMEOUT_MS, label = "") {
   );
 }
 
+// src/shared/cache.js
+function createTtlCache(defaultTtlMs = 30 * 60 * 1e3, maxEntries = 200) {
+  const store = /* @__PURE__ */ new Map();
+  function get(key) {
+    const entry = store.get(key);
+    if (!entry)
+      return void 0;
+    if (entry.expires <= Date.now()) {
+      store.delete(key);
+      return void 0;
+    }
+    return entry.value;
+  }
+  function set(key, value, ttlMs = defaultTtlMs) {
+    if (store.size >= maxEntries) {
+      const oldest = store.keys().next().value;
+      if (oldest !== void 0)
+        store.delete(oldest);
+    }
+    store.set(key, { value, expires: Date.now() + ttlMs });
+  }
+  function remember(_0, _1) {
+    return __async(this, arguments, function* (key, fn, ttlMs = defaultTtlMs, isValid = (v) => v != null) {
+      const cached = get(key);
+      if (cached !== void 0)
+        return cached;
+      const value = yield fn();
+      if (isValid(value))
+        set(key, value, ttlMs);
+      return value;
+    });
+  }
+  return { get, set, remember };
+}
+
 // src/shared/tmdb.js
+var tmdbInfoCache = createTtlCache(30 * 60 * 1e3, 300);
 var DEFAULT_TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
 function getTmdbApiKey() {
   try {
@@ -145,31 +184,39 @@ function fetchJson(_0) {
 }
 function getTmdbInfo(tmdbId, mediaType) {
   return __async(this, null, function* () {
-    var _a, _b, _c, _d, _e, _f;
     const empty = { title: "", originalTitle: "", turkishTitle: "", year: "", imdbId: null };
     const apiKey = getTmdbApiKey();
     if (!apiKey)
       return empty;
-    try {
-      const type = mediaType === "tv" ? "tv" : "movie";
-      const url = `https://api.themoviedb.org/3/${type}/${tmdbId}?api_key=${apiKey}&append_to_response=external_ids,translations`;
-      const data = yield fetchJson(url);
-      let turkishTitle = "";
-      const translations = ((_a = data.translations) == null ? void 0 : _a.translations) || [];
-      const tr = translations.find((t) => t.iso_3166_1 === "TR" || t.iso_639_1 === "tr");
-      if (tr) {
-        turkishTitle = ((_b = tr.data) == null ? void 0 : _b.title) || ((_c = tr.data) == null ? void 0 : _c.name) || "";
-      }
-      return {
-        title: data.name || data.title || data.original_title || "",
-        originalTitle: data.original_title || data.original_name || "",
-        turkishTitle,
-        year: ((_d = data.release_date) == null ? void 0 : _d.slice(0, 4)) || ((_e = data.first_air_date) == null ? void 0 : _e.slice(0, 4)) || "",
-        imdbId: ((_f = data.external_ids) == null ? void 0 : _f.imdb_id) || data.imdb_id || null
-      };
-    } catch (e) {
-      return empty;
-    }
+    const type = mediaType === "tv" ? "tv" : "movie";
+    return yield tmdbInfoCache.remember(
+      `${type}:${tmdbId}`,
+      () => __async(this, null, function* () {
+        var _a, _b, _c, _d, _e, _f;
+        try {
+          const url = `https://api.themoviedb.org/3/${type}/${tmdbId}?api_key=${apiKey}&append_to_response=external_ids,translations`;
+          const data = yield fetchJson(url);
+          let turkishTitle = "";
+          const translations = ((_a = data.translations) == null ? void 0 : _a.translations) || [];
+          const tr = translations.find((t) => t.iso_3166_1 === "TR" || t.iso_639_1 === "tr");
+          if (tr) {
+            turkishTitle = ((_b = tr.data) == null ? void 0 : _b.title) || ((_c = tr.data) == null ? void 0 : _c.name) || "";
+          }
+          return {
+            title: data.name || data.title || data.original_title || "",
+            originalTitle: data.original_title || data.original_name || "",
+            turkishTitle,
+            year: ((_d = data.release_date) == null ? void 0 : _d.slice(0, 4)) || ((_e = data.first_air_date) == null ? void 0 : _e.slice(0, 4)) || "",
+            imdbId: ((_f = data.external_ids) == null ? void 0 : _f.imdb_id) || data.imdb_id || null
+          };
+        } catch (e) {
+          return empty;
+        }
+      }),
+      30 * 60 * 1e3,
+      // Boş/hatalı sonucu cache'leme ki geçici bir hata kalıcı boş sonuca dönüşmesin.
+      (v) => !!(v && (v.title || v.originalTitle || v.imdbId))
+    );
   });
 }
 
@@ -351,13 +398,16 @@ function embedSubsSettingsLayout() {
   ];
 }
 
+// src/dizibal/constants.js
+var DOMAIN_CANDIDATES = [
+  "https://dizibal.com"
+];
+
 // src/dizibal/index.js
-var BASE_URL = "https://dizibal.com";
 var HEADERS = {
   "User-Agent": "Mozilla/5.0",
   "Accept": "application/json,text/plain,*/*",
-  "Accept-Language": "tr-TR,tr;q=0.9,en;q=0.8",
-  "Referer": `${BASE_URL}/`
+  "Accept-Language": "tr-TR,tr;q=0.9,en;q=0.8"
 };
 var TR_ASCII_MAP = {
   "\xE7": "c",
@@ -386,11 +436,11 @@ function normalizeMediaType(mediaType) {
 function normalizeTitle(value) {
   return String(value || "").replace(/[çÇğĞıİöÖşŞüÜâÂîÎûÛ]/g, (c) => TR_ASCII_MAP[c] || c).toLowerCase().replace(/[^a-z0-9]/g, "");
 }
-function fetchJson2(path) {
+function fetchJson2(domain, path) {
   return __async(this, null, function* () {
     return yield withTimeout((() => __async(this, null, function* () {
-      const response = yield fetch(`${BASE_URL}${path}`, {
-        headers: HEADERS,
+      const response = yield fetch(`${domain}${path}`, {
+        headers: __spreadProps(__spreadValues({}, HEADERS), { "Referer": `${domain}/` }),
         signal: timeoutSignal(DEFAULT_TIMEOUT_MS)
       });
       if (!response.ok) {
@@ -412,7 +462,7 @@ function fetchText(url, referer) {
           "User-Agent": HEADERS["User-Agent"],
           "Accept": "*/*",
           "Accept-Language": HEADERS["Accept-Language"],
-          "Referer": referer || `${BASE_URL}/`
+          "Referer": referer
         },
         signal: timeoutSignal(DEFAULT_TIMEOUT_MS)
       });
@@ -429,7 +479,7 @@ function fetchJsonAt(url, referer, origin) {
       const headers = {
         "User-Agent": HEADERS["User-Agent"],
         "Accept": "*/*",
-        "Referer": referer || `${BASE_URL}/`
+        "Referer": referer
       };
       if (origin)
         headers["Origin"] = origin;
@@ -482,56 +532,61 @@ function scoreItem(item, tmdbId, targets, year, type) {
 function searchContent(tmdbId, type, targets, year) {
   return __async(this, null, function* () {
     const endpoint = type === "tv" ? "/api/series" : "/api/movies";
-    const seen = /* @__PURE__ */ new Set();
-    const candidates = [];
-    for (const query of targets) {
-      let data;
-      try {
-        data = yield fetchJson2(apiPath(endpoint, {
-          search: query,
-          lang: "tr",
-          siteMode: "full"
-        }));
-      } catch (e) {
-        continue;
+    for (const domain of DOMAIN_CANDIDATES) {
+      const seen = /* @__PURE__ */ new Set();
+      const candidates = [];
+      for (const query of targets) {
+        let data;
+        try {
+          data = yield fetchJson2(domain, apiPath(endpoint, {
+            search: query,
+            lang: "tr",
+            siteMode: "full"
+          }));
+        } catch (e) {
+          continue;
+        }
+        for (const item of data.data || []) {
+          if (!item || !item._id || seen.has(item._id))
+            continue;
+          seen.add(item._id);
+          const idMatch = String(item.id || "") === String(tmdbId);
+          const iy = itemYear(item, type);
+          if (!idMatch && year && iy && Math.abs(Number(iy) - Number(year)) > 1)
+            continue;
+          const score = scoreItem(item, tmdbId, targets, year, type);
+          if (score <= 0)
+            continue;
+          candidates.push({ item, score });
+        }
       }
-      for (const item of data.data || []) {
-        if (!item || !item._id || seen.has(item._id))
-          continue;
-        seen.add(item._id);
-        const idMatch = String(item.id || "") === String(tmdbId);
-        const iy = itemYear(item, type);
-        if (!idMatch && year && iy && Math.abs(Number(iy) - Number(year)) > 1)
-          continue;
-        const score = scoreItem(item, tmdbId, targets, year, type);
-        if (score <= 0)
-          continue;
-        candidates.push({ item, score });
+      if (candidates.length) {
+        candidates.sort((a, b) => b.score - a.score);
+        return { domain, items: candidates.map((candidate) => candidate.item) };
       }
     }
-    candidates.sort((a, b) => b.score - a.score);
-    return candidates.map((candidate) => candidate.item);
+    return { domain: null, items: [] };
   });
 }
-function fetchStreamConfig(item, type, season, episode) {
+function fetchStreamConfig(domain, item, type, season, episode) {
   return __async(this, null, function* () {
     if (type === "tv") {
       const seasonNo = season || 1;
       const episodeNo = episode || 1;
-      const data2 = yield fetchJson2(apiPath(
+      const data2 = yield fetchJson2(domain, apiPath(
         `/api/series/${item._id}/seasons/${seasonNo}/episodes/${episodeNo}/stream`,
         { lang: "tr", siteMode: "full" }
       ));
       return data2.data || null;
     }
-    const data = yield fetchJson2(apiPath(`/api/movies/${item._id}/stream`, {
+    const data = yield fetchJson2(domain, apiPath(`/api/movies/${item._id}/stream`, {
       lang: "tr",
       siteMode: "full"
     }));
     return data.data || null;
   });
 }
-function fetchM3u8(config) {
+function fetchM3u8(domain, config) {
   return __async(this, null, function* () {
     const embedUrl = config && config.streamUrl;
     if (!embedUrl)
@@ -539,7 +594,7 @@ function fetchM3u8(config) {
     const origin = originOf(embedUrl);
     let html;
     try {
-      html = yield fetchText(embedUrl, `${BASE_URL}/`);
+      html = yield fetchText(embedUrl, `${domain}/`);
     } catch (e) {
       return null;
     }
@@ -564,7 +619,7 @@ function fetchM3u8(config) {
 function streamHeaders(referer) {
   return {
     "User-Agent": HEADERS["User-Agent"],
-    "Referer": referer || BASE_URL
+    "Referer": referer
   };
 }
 function normalizeSubtitle(sub, referer) {
@@ -589,14 +644,16 @@ function resolveTarget(tmdbId, mediaType, season, episode) {
     const targets = [...new Set([turkishTitle, title, originalTitle].filter(Boolean))];
     if (!targets.length)
       return null;
-    const candidates = yield searchContent(tmdbId, type, targets, year);
-    for (const item of candidates.slice(0, 5)) {
+    const { domain, items } = yield searchContent(tmdbId, type, targets, year);
+    if (!domain)
+      return null;
+    for (const item of items.slice(0, 5)) {
       try {
-        const config = yield fetchStreamConfig(item, type, season, episode);
+        const config = yield fetchStreamConfig(domain, item, type, season, episode);
         if (!config || !config.src)
           continue;
         const mediaTitle = type === "tv" ? `${itemTitle(item, type) || title} S${season || 1}E${episode || 1}` : `${itemTitle(item, type) || title}${year ? ` (${year})` : ""}`;
-        return { item, config, mediaTitle };
+        return { item, config, mediaTitle, domain };
       } catch (e) {
       }
     }
@@ -606,14 +663,14 @@ function resolveTarget(tmdbId, mediaType, season, episode) {
 function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
   return __async(this, null, function* () {
     try {
-      console.log(`[Dizibal v1.2.4] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
+      console.log(`[Dizibal v1.3.0] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
       const resolved = yield resolveTarget(tmdbId, mediaType, season, episode);
       if (!resolved)
         return [];
-      const extracted = yield fetchM3u8(resolved.config);
+      const extracted = yield fetchM3u8(resolved.domain, resolved.config);
       if (!extracted || !extracted.url)
         return [];
-      const referer = extracted.embedOrigin ? `${extracted.embedOrigin}/` : `${BASE_URL}/`;
+      const referer = extracted.embedOrigin ? `${extracted.embedOrigin}/` : `${resolved.domain}/`;
       const subtitles = extracted.subtitles.map((sub) => normalizeSubtitle(sub, referer)).filter(Boolean);
       let masterText = null;
       try {

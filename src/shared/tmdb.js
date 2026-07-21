@@ -1,4 +1,10 @@
 import { withTimeout, timeoutSignal, DEFAULT_TIMEOUT_MS } from './http.js';
+import { createTtlCache } from './cache.js';
+
+// tmdbId+type başına 30 dk cache — Nuvio runtime uzun ömürlü olduğundan
+// bölüm/sezon geçişlerinde aynı TMDB çağrısını tekrar tekrar yapmayı önler,
+// hem hızlandırır hem paylaşılan API anahtarındaki throttle riskini azaltır.
+const tmdbInfoCache = createTtlCache(30 * 60 * 1000, 300);
 
 // Nuvio plugin runtime'ı TMDB anahtarını provider'a enjekte ETMEZ; provider'lar
 // kendi anahtarını taşımak zorunda. Topluluk genelinde paylaşılan public TMDB
@@ -57,26 +63,34 @@ export async function getTmdbInfo(tmdbId, mediaType) {
     const apiKey = getTmdbApiKey();
     if (!apiKey) return empty;
 
-    try {
-        const type = mediaType === 'tv' ? 'tv' : 'movie';
-        const url = `https://api.themoviedb.org/3/${type}/${tmdbId}?api_key=${apiKey}&append_to_response=external_ids,translations`;
-        const data = await fetchJson(url);
+    const type = mediaType === 'tv' ? 'tv' : 'movie';
+    return await tmdbInfoCache.remember(
+        `${type}:${tmdbId}`,
+        async () => {
+            try {
+                const url = `https://api.themoviedb.org/3/${type}/${tmdbId}?api_key=${apiKey}&append_to_response=external_ids,translations`;
+                const data = await fetchJson(url);
 
-        let turkishTitle = '';
-        const translations = data.translations?.translations || [];
-        const tr = translations.find(t => t.iso_3166_1 === 'TR' || t.iso_639_1 === 'tr');
-        if (tr) {
-            turkishTitle = tr.data?.title || tr.data?.name || '';
-        }
+                let turkishTitle = '';
+                const translations = data.translations?.translations || [];
+                const tr = translations.find(t => t.iso_3166_1 === 'TR' || t.iso_639_1 === 'tr');
+                if (tr) {
+                    turkishTitle = tr.data?.title || tr.data?.name || '';
+                }
 
-        return {
-            title: data.name || data.title || data.original_title || '',
-            originalTitle: data.original_title || data.original_name || '',
-            turkishTitle,
-            year: data.release_date?.slice(0, 4) || data.first_air_date?.slice(0, 4) || '',
-            imdbId: data.external_ids?.imdb_id || data.imdb_id || null
-        };
-    } catch {
-        return empty;
-    }
+                return {
+                    title: data.name || data.title || data.original_title || '',
+                    originalTitle: data.original_title || data.original_name || '',
+                    turkishTitle,
+                    year: data.release_date?.slice(0, 4) || data.first_air_date?.slice(0, 4) || '',
+                    imdbId: data.external_ids?.imdb_id || data.imdb_id || null
+                };
+            } catch {
+                return empty;
+            }
+        },
+        30 * 60 * 1000,
+        // Boş/hatalı sonucu cache'leme ki geçici bir hata kalıcı boş sonuca dönüşmesin.
+        v => !!(v && (v.title || v.originalTitle || v.imdbId))
+    );
 }

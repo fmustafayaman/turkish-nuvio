@@ -1,14 +1,12 @@
 import { getTmdbInfo, tmdbApiKeySettingsLayout } from '../shared/tmdb.js';
 import { withTimeout, timeoutSignal, DEFAULT_TIMEOUT_MS } from '../shared/http.js';
 import { maybeEmbedSubsUrl, detectHlsQuality, embedSubsSettingsLayout } from '../shared/hls.js';
-
-const BASE_URL = 'https://dizibal.com';
+import { DOMAIN_CANDIDATES } from './constants.js';
 
 const HEADERS = {
     'User-Agent': 'Mozilla/5.0',
     'Accept': 'application/json,text/plain,*/*',
-    'Accept-Language': 'tr-TR,tr;q=0.9,en;q=0.8',
-    'Referer': `${BASE_URL}/`
+    'Accept-Language': 'tr-TR,tr;q=0.9,en;q=0.8'
 };
 
 const TR_ASCII_MAP = {
@@ -29,10 +27,10 @@ function normalizeTitle(value) {
         .replace(/[^a-z0-9]/g, '');
 }
 
-async function fetchJson(path) {
+async function fetchJson(domain, path) {
     return await withTimeout((async () => {
-        const response = await fetch(`${BASE_URL}${path}`, {
-            headers: HEADERS,
+        const response = await fetch(`${domain}${path}`, {
+            headers: { ...HEADERS, 'Referer': `${domain}/` },
             signal: timeoutSignal(DEFAULT_TIMEOUT_MS)
         });
         if (!response.ok) {
@@ -55,7 +53,7 @@ async function fetchText(url, referer) {
                 'User-Agent': HEADERS['User-Agent'],
                 'Accept': '*/*',
                 'Accept-Language': HEADERS['Accept-Language'],
-                'Referer': referer || `${BASE_URL}/`
+                'Referer': referer
             },
             signal: timeoutSignal(DEFAULT_TIMEOUT_MS)
         });
@@ -71,7 +69,7 @@ async function fetchJsonAt(url, referer, origin) {
         const headers = {
             'User-Agent': HEADERS['User-Agent'],
             'Accept': '*/*',
-            'Referer': referer || `${BASE_URL}/`
+            'Referer': referer
         };
         if (origin) headers['Origin'] = origin;
         const response = await fetch(url, { headers, signal: timeoutSignal(DEFAULT_TIMEOUT_MS) });
@@ -128,55 +126,65 @@ function scoreItem(item, tmdbId, targets, year, type) {
 
 async function searchContent(tmdbId, type, targets, year) {
     const endpoint = type === 'tv' ? '/api/series' : '/api/movies';
-    const seen = new Set();
-    const candidates = [];
 
-    for (const query of targets) {
-        let data;
-        try {
-            data = await fetchJson(apiPath(endpoint, {
-                search: query,
-                lang: 'tr',
-                siteMode: 'full'
-            }));
-        } catch {
-            continue;
+    // DOMAIN_CANDIDATES sırayla denenir; ilk sonuç veren domain'de kalınır
+    // (fullhdfilm/dizifilm ile aynı desen — site domain'i değişirse diğer
+    // adaylara düşer).
+    for (const domain of DOMAIN_CANDIDATES) {
+        const seen = new Set();
+        const candidates = [];
+
+        for (const query of targets) {
+            let data;
+            try {
+                data = await fetchJson(domain, apiPath(endpoint, {
+                    search: query,
+                    lang: 'tr',
+                    siteMode: 'full'
+                }));
+            } catch {
+                continue;
+            }
+
+            for (const item of data.data || []) {
+                if (!item || !item._id || seen.has(item._id)) continue;
+                seen.add(item._id);
+
+                // Aynı başlığın farklı yapımlarını ayır (ör. One Piece anime 1999 vs
+                // Netflix canlı-aksiyon 2023). TMDB id birebir eşleşmiyorsa ve yıllar
+                // 1'den fazla farklıysa bu FARKLI bir yapımdır — yanlış içeriğe
+                // fallback etmemek için ele.
+                const idMatch = String(item.id || '') === String(tmdbId);
+                const iy = itemYear(item, type);
+                if (!idMatch && year && iy && Math.abs(Number(iy) - Number(year)) > 1) continue;
+
+                const score = scoreItem(item, tmdbId, targets, year, type);
+                if (score <= 0) continue;
+                candidates.push({ item, score });
+            }
         }
 
-        for (const item of data.data || []) {
-            if (!item || !item._id || seen.has(item._id)) continue;
-            seen.add(item._id);
-
-            // Aynı başlığın farklı yapımlarını ayır (ör. One Piece anime 1999 vs
-            // Netflix canlı-aksiyon 2023). TMDB id birebir eşleşmiyorsa ve yıllar
-            // 1'den fazla farklıysa bu FARKLI bir yapımdır — yanlış içeriğe
-            // fallback etmemek için ele.
-            const idMatch = String(item.id || '') === String(tmdbId);
-            const iy = itemYear(item, type);
-            if (!idMatch && year && iy && Math.abs(Number(iy) - Number(year)) > 1) continue;
-
-            const score = scoreItem(item, tmdbId, targets, year, type);
-            if (score <= 0) continue;
-            candidates.push({ item, score });
+        if (candidates.length) {
+            candidates.sort((a, b) => b.score - a.score);
+            return { domain, items: candidates.map(candidate => candidate.item) };
         }
     }
 
-    candidates.sort((a, b) => b.score - a.score);
-    return candidates.map(candidate => candidate.item);
+    return { domain: null, items: [] };
 }
 
-async function fetchStreamConfig(item, type, season, episode) {
+async function fetchStreamConfig(domain, item, type, season, episode) {
     if (type === 'tv') {
         const seasonNo = season || 1;
         const episodeNo = episode || 1;
-        const data = await fetchJson(apiPath(
+        const data = await fetchJson(domain, apiPath(
             `/api/series/${item._id}/seasons/${seasonNo}/episodes/${episodeNo}/stream`,
             { lang: 'tr', siteMode: 'full' }
         ));
         return data.data || null;
     }
 
-    const data = await fetchJson(apiPath(`/api/movies/${item._id}/stream`, {
+    const data = await fetchJson(domain, apiPath(`/api/movies/${item._id}/stream`, {
         lang: 'tr',
         siteMode: 'full'
     }));
@@ -187,14 +195,14 @@ async function fetchStreamConfig(item, type, season, episode) {
 // PlayerJS embed host'una (ör. x.ag2m4.cfd) ait streamUrl veriyor. Gerçek m3u8
 // o embed sayfasındaki `/dl?op=get_stream&view_id=...&hash=...` çağrısıyla,
 // host origin'i Origin header'ı olarak gönderilerek alınır.
-async function fetchM3u8(config) {
+async function fetchM3u8(domain, config) {
     const embedUrl = config && config.streamUrl;
     if (!embedUrl) return null;
 
     const origin = originOf(embedUrl);
     let html;
     try {
-        html = await fetchText(embedUrl, `${BASE_URL}/`);
+        html = await fetchText(embedUrl, `${domain}/`);
     } catch {
         return null;
     }
@@ -220,7 +228,7 @@ async function fetchM3u8(config) {
 function streamHeaders(referer) {
     return {
         'User-Agent': HEADERS['User-Agent'],
-        'Referer': referer || BASE_URL
+        'Referer': referer
     };
 }
 
@@ -245,17 +253,19 @@ async function resolveTarget(tmdbId, mediaType, season, episode) {
     const targets = [...new Set([turkishTitle, title, originalTitle].filter(Boolean))];
     if (!targets.length) return null;
 
-    const candidates = await searchContent(tmdbId, type, targets, year);
-    for (const item of candidates.slice(0, 5)) {
+    const { domain, items } = await searchContent(tmdbId, type, targets, year);
+    if (!domain) return null;
+
+    for (const item of items.slice(0, 5)) {
         try {
-            const config = await fetchStreamConfig(item, type, season, episode);
+            const config = await fetchStreamConfig(domain, item, type, season, episode);
             if (!config || !config.src) continue;
 
             const mediaTitle = type === 'tv'
                 ? `${itemTitle(item, type) || title} S${season || 1}E${episode || 1}`
                 : `${itemTitle(item, type) || title}${year ? ` (${year})` : ''}`;
 
-            return { item, config, mediaTitle };
+            return { item, config, mediaTitle, domain };
         } catch {
             // Try the next candidate.
         }
@@ -266,15 +276,15 @@ async function resolveTarget(tmdbId, mediaType, season, episode) {
 
 async function getStreams(tmdbId, mediaType = 'movie', season = 1, episode = 1) {
     try {
-        console.log(`[Dizibal v1.2.4] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
+        console.log(`[Dizibal v1.3.0] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
         const resolved = await resolveTarget(tmdbId, mediaType, season, episode);
         if (!resolved) return [];
 
-        const extracted = await fetchM3u8(resolved.config);
+        const extracted = await fetchM3u8(resolved.domain, resolved.config);
         if (!extracted || !extracted.url) return [];
 
         // m3u8 CDN'i embed host'unun Referer'ını ister; origin seviyesi yeterli.
-        const referer = extracted.embedOrigin ? `${extracted.embedOrigin}/` : `${BASE_URL}/`;
+        const referer = extracted.embedOrigin ? `${extracted.embedOrigin}/` : `${resolved.domain}/`;
         const subtitles = extracted.subtitles
             .map(sub => normalizeSubtitle(sub, referer))
             .filter(Boolean);

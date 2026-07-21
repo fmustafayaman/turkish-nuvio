@@ -1,6 +1,6 @@
 /**
  * dizifilm - Built from src/dizifilm/
- * Generated: 2026-07-21T20:50:30.589Z
+ * Generated: 2026-07-21T21:12:16.975Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -104,7 +104,43 @@ function withTimeout(promise, ms = DEFAULT_TIMEOUT_MS, label = "") {
   );
 }
 
+// src/shared/cache.js
+function createTtlCache(defaultTtlMs = 30 * 60 * 1e3, maxEntries = 200) {
+  const store = /* @__PURE__ */ new Map();
+  function get(key) {
+    const entry = store.get(key);
+    if (!entry)
+      return void 0;
+    if (entry.expires <= Date.now()) {
+      store.delete(key);
+      return void 0;
+    }
+    return entry.value;
+  }
+  function set(key, value, ttlMs = defaultTtlMs) {
+    if (store.size >= maxEntries) {
+      const oldest = store.keys().next().value;
+      if (oldest !== void 0)
+        store.delete(oldest);
+    }
+    store.set(key, { value, expires: Date.now() + ttlMs });
+  }
+  function remember(_0, _1) {
+    return __async(this, arguments, function* (key, fn, ttlMs = defaultTtlMs, isValid = (v) => v != null) {
+      const cached = get(key);
+      if (cached !== void 0)
+        return cached;
+      const value = yield fn();
+      if (isValid(value))
+        set(key, value, ttlMs);
+      return value;
+    });
+  }
+  return { get, set, remember };
+}
+
 // src/shared/tmdb.js
+var tmdbInfoCache = createTtlCache(30 * 60 * 1e3, 300);
 var DEFAULT_TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
 function getTmdbApiKey() {
   try {
@@ -148,31 +184,39 @@ function fetchJson(_0) {
 }
 function getTmdbInfo(tmdbId, mediaType) {
   return __async(this, null, function* () {
-    var _a, _b, _c, _d, _e, _f;
     const empty = { title: "", originalTitle: "", turkishTitle: "", year: "", imdbId: null };
     const apiKey = getTmdbApiKey();
     if (!apiKey)
       return empty;
-    try {
-      const type = mediaType === "tv" ? "tv" : "movie";
-      const url = `https://api.themoviedb.org/3/${type}/${tmdbId}?api_key=${apiKey}&append_to_response=external_ids,translations`;
-      const data = yield fetchJson(url);
-      let turkishTitle = "";
-      const translations = ((_a = data.translations) == null ? void 0 : _a.translations) || [];
-      const tr = translations.find((t) => t.iso_3166_1 === "TR" || t.iso_639_1 === "tr");
-      if (tr) {
-        turkishTitle = ((_b = tr.data) == null ? void 0 : _b.title) || ((_c = tr.data) == null ? void 0 : _c.name) || "";
-      }
-      return {
-        title: data.name || data.title || data.original_title || "",
-        originalTitle: data.original_title || data.original_name || "",
-        turkishTitle,
-        year: ((_d = data.release_date) == null ? void 0 : _d.slice(0, 4)) || ((_e = data.first_air_date) == null ? void 0 : _e.slice(0, 4)) || "",
-        imdbId: ((_f = data.external_ids) == null ? void 0 : _f.imdb_id) || data.imdb_id || null
-      };
-    } catch (e) {
-      return empty;
-    }
+    const type = mediaType === "tv" ? "tv" : "movie";
+    return yield tmdbInfoCache.remember(
+      `${type}:${tmdbId}`,
+      () => __async(this, null, function* () {
+        var _a, _b, _c, _d, _e, _f;
+        try {
+          const url = `https://api.themoviedb.org/3/${type}/${tmdbId}?api_key=${apiKey}&append_to_response=external_ids,translations`;
+          const data = yield fetchJson(url);
+          let turkishTitle = "";
+          const translations = ((_a = data.translations) == null ? void 0 : _a.translations) || [];
+          const tr = translations.find((t) => t.iso_3166_1 === "TR" || t.iso_639_1 === "tr");
+          if (tr) {
+            turkishTitle = ((_b = tr.data) == null ? void 0 : _b.title) || ((_c = tr.data) == null ? void 0 : _c.name) || "";
+          }
+          return {
+            title: data.name || data.title || data.original_title || "",
+            originalTitle: data.original_title || data.original_name || "",
+            turkishTitle,
+            year: ((_d = data.release_date) == null ? void 0 : _d.slice(0, 4)) || ((_e = data.first_air_date) == null ? void 0 : _e.slice(0, 4)) || "",
+            imdbId: ((_f = data.external_ids) == null ? void 0 : _f.imdb_id) || data.imdb_id || null
+          };
+        } catch (e) {
+          return empty;
+        }
+      }),
+      30 * 60 * 1e3,
+      // Boş/hatalı sonucu cache'leme ki geçici bir hata kalıcı boş sonuca dönüşmesin.
+      (v) => !!(v && (v.title || v.originalTitle || v.imdbId))
+    );
   });
 }
 
