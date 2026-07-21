@@ -1,5 +1,6 @@
 // Dizifilm.life — Türkçe dublaj/altyazılı film ve dizi kaynağı.
 export const DOMAIN_CANDIDATES = [
+    'https://dizifilmizle.to',
     'https://dizifilm.life'
 ];
 

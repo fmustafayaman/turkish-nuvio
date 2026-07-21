@@ -1,6 +1,6 @@
 /**
  * dizifilm - Built from src/dizifilm/
- * Generated: 2026-07-21T20:39:15.469Z
+ * Generated: 2026-07-21T20:50:30.589Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -178,6 +178,7 @@ function getTmdbInfo(tmdbId, mediaType) {
 
 // src/dizifilm/constants.js
 var DOMAIN_CANDIDATES = [
+  "https://dizifilmizle.to",
   "https://dizifilm.life"
 ];
 var SITE_HEADERS = {

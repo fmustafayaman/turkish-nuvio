@@ -1,6 +1,6 @@
 /**
  * fullhdfilm - Built from src/fullhdfilm/
- * Generated: 2026-07-21T20:39:15.472Z
+ * Generated: 2026-07-21T20:50:30.592Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -178,6 +178,7 @@ function getTmdbInfo(tmdbId, mediaType) {
 
 // src/fullhdfilm/constants.js
 var DOMAIN_CANDIDATES = [
+  "https://www.fullhdfilmizlesene.nz",
   "https://www.fullhdfilmizlesene.life",
   "https://www.fullhdfilmizlesene.de",
   "https://www.fullhdfilmizlesene.nl"

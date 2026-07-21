@@ -1,6 +1,7 @@
 // FullHDFilmizlesene — Türkçe dublaj/altyazılı film kaynağı.
 // Domain sık değişebilir; alternatifler sırayla denenir.
 export const DOMAIN_CANDIDATES = [
+    'https://www.fullhdfilmizlesene.nz',
     'https://www.fullhdfilmizlesene.life',
     'https://www.fullhdfilmizlesene.de',
     'https://www.fullhdfilmizlesene.nl'
