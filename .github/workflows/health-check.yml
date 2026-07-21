@@ -70,6 +70,14 @@ jobs:
         continue-on-error: true
         run: npm run test:dizifilm 2>&1 | tee test-dizifilm.log
 
+      # Sözleşme (CLAUDE.md) doğrulaması: yukarıdaki testler "en az 1 stream
+      # var mı" bakar, bu ise dönen stream objelerinin gerçek şeklini
+      # (url/type/quality/headers/provider) doğrular.
+      - name: Stream şeması kontrolü
+        id: schema
+        continue-on-error: true
+        run: npm run check:schema 2>&1 | tee schema.log
+
       # Domain otomatik düzeltildiyse VE tüm testler hâlâ geçiyorsa
       # (yani sadece domain değişmiş, scraping mantığı bozulmamış):
       # otomatik bir PR aç. Testlerden biri patlarsa PR açılmaz — o
@@ -80,7 +88,8 @@ jobs:
           steps.fix_diff.outputs.changed == 'true' &&
           steps.test_animecix.outcome != 'failure' &&
           steps.test_fullhdfilm.outcome != 'failure' &&
-          steps.test_dizifilm.outcome != 'failure'
+          steps.test_dizifilm.outcome != 'failure' &&
+          steps.schema.outcome != 'failure'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -112,6 +121,7 @@ jobs:
           ANIMECIX_OUTCOME: ${{ steps.test_animecix.outcome }}
           FULLHDFILM_OUTCOME: ${{ steps.test_fullhdfilm.outcome }}
           DIZIFILM_OUTCOME: ${{ steps.test_dizifilm.outcome }}
+          SCHEMA_OUTCOME: ${{ steps.schema.outcome }}
           FIX_CHANGED: ${{ steps.fix_diff.outputs.changed }}
           AUTO_PR_OUTCOME: ${{ steps.auto_pr.outcome }}
         with:
@@ -125,6 +135,7 @@ jobs:
               { name: 'Animecix testi', outcome: process.env.ANIMECIX_OUTCOME, log: 'test-animecix.log' },
               { name: 'FullHDFilm testi', outcome: process.env.FULLHDFILM_OUTCOME, log: 'test-fullhdfilm.log' },
               { name: 'Dizifilm testi', outcome: process.env.DIZIFILM_OUTCOME, log: 'test-dizifilm.log' },
+              { name: 'Stream şeması kontrolü', outcome: process.env.SCHEMA_OUTCOME, log: 'schema.log' },
             ];
 
             const failed = checks.filter(c => c.outcome === 'failure');

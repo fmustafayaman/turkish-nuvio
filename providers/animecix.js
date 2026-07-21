@@ -1,6 +1,6 @@
 /**
  * animecix - Built from src/animecix/
- * Generated: 2026-07-21T21:12:16.940Z
+ * Generated: 2026-07-21T21:21:30.793Z
  */
 var __defProp = Object.defineProperty;
 var __getOwnPropSymbols = Object.getOwnPropertySymbols;
@@ -115,73 +115,6 @@ function withTimeout(promise, ms = DEFAULT_TIMEOUT_MS, label = "") {
   );
 }
 
-// src/shared/cache.js
-function createTtlCache(defaultTtlMs = 30 * 60 * 1e3, maxEntries = 200) {
-  const store = /* @__PURE__ */ new Map();
-  function get(key) {
-    const entry = store.get(key);
-    if (!entry)
-      return void 0;
-    if (entry.expires <= Date.now()) {
-      store.delete(key);
-      return void 0;
-    }
-    return entry.value;
-  }
-  function set(key, value, ttlMs = defaultTtlMs) {
-    if (store.size >= maxEntries) {
-      const oldest = store.keys().next().value;
-      if (oldest !== void 0)
-        store.delete(oldest);
-    }
-    store.set(key, { value, expires: Date.now() + ttlMs });
-  }
-  function remember(_0, _1) {
-    return __async(this, arguments, function* (key, fn, ttlMs = defaultTtlMs, isValid = (v) => v != null) {
-      const cached = get(key);
-      if (cached !== void 0)
-        return cached;
-      const value = yield fn();
-      if (isValid(value))
-        set(key, value, ttlMs);
-      return value;
-    });
-  }
-  return { get, set, remember };
-}
-
-// src/shared/tmdb.js
-var tmdbInfoCache = createTtlCache(30 * 60 * 1e3, 300);
-var DEFAULT_TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
-function getTmdbApiKey() {
-  try {
-    const settings = typeof globalThis !== "undefined" ? globalThis.SCRAPER_SETTINGS : null;
-    const userKey = (settings == null ? void 0 : settings.tmdbApiKey) ? String(settings.tmdbApiKey).trim() : "";
-    if (userKey)
-      return userKey;
-  } catch (e) {
-  }
-  try {
-    const injected = typeof globalThis !== "undefined" ? globalThis.TMDB_API_KEY : "";
-    if (injected)
-      return String(injected).trim();
-  } catch (e) {
-  }
-  return DEFAULT_TMDB_API_KEY;
-}
-function tmdbApiKeySettingsLayout() {
-  return [
-    { type: "header", label: "TMDB API Anahtar\u0131 (opsiyonel)" },
-    {
-      type: "text",
-      key: "tmdbApiKey",
-      label: "Kendi TMDB API anahtar\u0131n",
-      description: "Bo\u015F b\u0131rak\u0131rsan payla\u015F\u0131lan varsay\u0131lan anahtar kullan\u0131l\u0131r. Kendi TMDB v3 API anahtar\u0131n\u0131 girersen (themoviedb.org hesab\u0131ndan \xFCcretsiz al\u0131n\u0131r) bu ekrandaki t\xFCm TMDB istekleri onunla yap\u0131l\u0131r.",
-      defaultValue: ""
-    }
-  ];
-}
-
 // src/animecix/utils.js
 function fetchJson(_0) {
   return __async(this, arguments, function* (url, options = {}) {
@@ -212,39 +145,6 @@ function fetchWithRedirect(_0) {
       }
       return response.url;
     }))(), timeout, url);
-  });
-}
-function getTmdbInfo(tmdbId, mediaType) {
-  return __async(this, null, function* () {
-    const apiKey = getTmdbApiKey();
-    if (!apiKey)
-      return { title: "", originalTitle: "" };
-    try {
-      const type = mediaType === "tv" ? "tv" : "movie";
-      const url = `https://api.themoviedb.org/3/${type}/${tmdbId}?api_key=${apiKey}`;
-      const data = yield fetchJson(url);
-      return {
-        title: data.name || data.title || data.original_title || "",
-        originalTitle: data.original_title || data.original_name || ""
-      };
-    } catch (e) {
-      return { title: "", originalTitle: "" };
-    }
-  });
-}
-function getImdbId(tmdbId, mediaType) {
-  return __async(this, null, function* () {
-    const apiKey = getTmdbApiKey();
-    if (!apiKey)
-      return null;
-    try {
-      const type = mediaType === "tv" ? "tv" : "movie";
-      const url = `https://api.themoviedb.org/3/${type}/${tmdbId}/external_ids?api_key=${apiKey}`;
-      const data = yield fetchJson(url);
-      return data.imdb_id || null;
-    } catch (e) {
-      return null;
-    }
   });
 }
 function resolveEpisodeMapping(imdbId, season, episode) {
@@ -519,6 +419,122 @@ function extractStreams(episodePath, animeTitle, episodeLabel) {
   });
 }
 
+// src/shared/cache.js
+function createTtlCache(defaultTtlMs = 30 * 60 * 1e3, maxEntries = 200) {
+  const store = /* @__PURE__ */ new Map();
+  function get(key) {
+    const entry = store.get(key);
+    if (!entry)
+      return void 0;
+    if (entry.expires <= Date.now()) {
+      store.delete(key);
+      return void 0;
+    }
+    return entry.value;
+  }
+  function set(key, value, ttlMs = defaultTtlMs) {
+    if (store.size >= maxEntries) {
+      const oldest = store.keys().next().value;
+      if (oldest !== void 0)
+        store.delete(oldest);
+    }
+    store.set(key, { value, expires: Date.now() + ttlMs });
+  }
+  function remember(_0, _1) {
+    return __async(this, arguments, function* (key, fn, ttlMs = defaultTtlMs, isValid = (v) => v != null) {
+      const cached = get(key);
+      if (cached !== void 0)
+        return cached;
+      const value = yield fn();
+      if (isValid(value))
+        set(key, value, ttlMs);
+      return value;
+    });
+  }
+  return { get, set, remember };
+}
+
+// src/shared/tmdb.js
+var tmdbInfoCache = createTtlCache(30 * 60 * 1e3, 300);
+var DEFAULT_TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
+function getTmdbApiKey() {
+  try {
+    const settings = typeof globalThis !== "undefined" ? globalThis.SCRAPER_SETTINGS : null;
+    const userKey = (settings == null ? void 0 : settings.tmdbApiKey) ? String(settings.tmdbApiKey).trim() : "";
+    if (userKey)
+      return userKey;
+  } catch (e) {
+  }
+  try {
+    const injected = typeof globalThis !== "undefined" ? globalThis.TMDB_API_KEY : "";
+    if (injected)
+      return String(injected).trim();
+  } catch (e) {
+  }
+  return DEFAULT_TMDB_API_KEY;
+}
+function tmdbApiKeySettingsLayout() {
+  return [
+    { type: "header", label: "TMDB API Anahtar\u0131 (opsiyonel)" },
+    {
+      type: "text",
+      key: "tmdbApiKey",
+      label: "Kendi TMDB API anahtar\u0131n",
+      description: "Bo\u015F b\u0131rak\u0131rsan payla\u015F\u0131lan varsay\u0131lan anahtar kullan\u0131l\u0131r. Kendi TMDB v3 API anahtar\u0131n\u0131 girersen (themoviedb.org hesab\u0131ndan \xFCcretsiz al\u0131n\u0131r) bu ekrandaki t\xFCm TMDB istekleri onunla yap\u0131l\u0131r.",
+      defaultValue: ""
+    }
+  ];
+}
+function fetchJson2(_0) {
+  return __async(this, arguments, function* (url, options = {}) {
+    const _a = options, { timeout = DEFAULT_TIMEOUT_MS } = _a, rest = __objRest(_a, ["timeout"]);
+    return yield withTimeout((() => __async(this, null, function* () {
+      const response = yield fetch(url, __spreadValues({ signal: timeoutSignal(timeout) }, rest));
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} on ${url}`);
+      }
+      return yield response.json();
+    }))(), timeout, url);
+  });
+}
+function getTmdbInfo(tmdbId, mediaType) {
+  return __async(this, null, function* () {
+    const empty = { title: "", originalTitle: "", turkishTitle: "", year: "", imdbId: null };
+    const apiKey = getTmdbApiKey();
+    if (!apiKey)
+      return empty;
+    const type = mediaType === "tv" ? "tv" : "movie";
+    return yield tmdbInfoCache.remember(
+      `${type}:${tmdbId}`,
+      () => __async(this, null, function* () {
+        var _a, _b, _c, _d, _e, _f;
+        try {
+          const url = `https://api.themoviedb.org/3/${type}/${tmdbId}?api_key=${apiKey}&append_to_response=external_ids,translations`;
+          const data = yield fetchJson2(url);
+          let turkishTitle = "";
+          const translations = ((_a = data.translations) == null ? void 0 : _a.translations) || [];
+          const tr = translations.find((t) => t.iso_3166_1 === "TR" || t.iso_639_1 === "tr");
+          if (tr) {
+            turkishTitle = ((_b = tr.data) == null ? void 0 : _b.title) || ((_c = tr.data) == null ? void 0 : _c.name) || "";
+          }
+          return {
+            title: data.name || data.title || data.original_title || "",
+            originalTitle: data.original_title || data.original_name || "",
+            turkishTitle,
+            year: ((_d = data.release_date) == null ? void 0 : _d.slice(0, 4)) || ((_e = data.first_air_date) == null ? void 0 : _e.slice(0, 4)) || "",
+            imdbId: ((_f = data.external_ids) == null ? void 0 : _f.imdb_id) || data.imdb_id || null
+          };
+        } catch (e) {
+          return empty;
+        }
+      }),
+      30 * 60 * 1e3,
+      // Boş/hatalı sonucu cache'leme ki geçici bir hata kalıcı boş sonuca dönüşmesin.
+      (v) => !!(v && (v.title || v.originalTitle || v.imdbId))
+    );
+  });
+}
+
 // src/animecix/index.js
 function extractEpisodeSources(animeId, season, episode, animeTitle, label) {
   return __async(this, null, function* () {
@@ -577,7 +593,7 @@ function getStreams(tmdbId, mediaType = "tv", season = 1, episode = 1) {
       console.log("[Animecix] episode-videos bo\u015F, mapping deneniyor");
       let mappedEpisode = null;
       try {
-        const imdbId = yield getImdbId(tmdbId, mediaType);
+        const { imdbId } = yield getTmdbInfo(tmdbId, mediaType);
         if (imdbId) {
           const mapping = yield resolveEpisodeMapping(imdbId, s, e);
           mappedEpisode = (mapping == null ? void 0 : mapping.mal_episode) || null;

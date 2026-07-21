@@ -247,13 +247,32 @@ function normalizeSubtitle(sub, referer) {
     };
 }
 
-async function resolveTarget(tmdbId, mediaType, season, episode) {
+// Geçici teşhis: Nuvio'da log görünmediği için, akışın hangi aşamada
+// takıldığını kaynak listesinde bir satır olarak gösterir (bkz. fullhdfilm).
+const DEBUG = false;
+
+function debugStream(msg) {
+    return [{
+        name: `DEBUG: ${msg}`,
+        title: 'Dizibal teşhis',
+        url: 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',
+        quality: 'debug',
+        headers: {},
+        provider: 'dizibal',
+        type: 'm3u8'
+    }];
+}
+
+// `steps` verilirse (yalnızca getStreams'in DEBUG modu) her aşamayı teşhis için biriktirir.
+async function resolveTarget(tmdbId, mediaType, season, episode, steps) {
     const type = normalizeMediaType(mediaType);
     const { title, originalTitle, turkishTitle, year } = await getTmdbInfo(tmdbId, type);
     const targets = [...new Set([turkishTitle, title, originalTitle].filter(Boolean))];
+    steps?.push(`tmdb t="${title}" tr="${turkishTitle}" o="${originalTitle}"`);
     if (!targets.length) return null;
 
     const { domain, items } = await searchContent(tmdbId, type, targets, year);
+    steps?.push(`arama domain=${domain || 'yok'} aday=${items.length}`);
     if (!domain) return null;
 
     for (const item of items.slice(0, 5)) {
@@ -271,17 +290,22 @@ async function resolveTarget(tmdbId, mediaType, season, episode) {
         }
     }
 
+    steps?.push('hiçbir aday geçerli stream config vermedi');
     return null;
 }
 
 async function getStreams(tmdbId, mediaType = 'movie', season = 1, episode = 1) {
+    const steps = [];
     try {
         console.log(`[Dizibal v1.3.0] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
-        const resolved = await resolveTarget(tmdbId, mediaType, season, episode);
-        if (!resolved) return [];
+        const resolved = await resolveTarget(tmdbId, mediaType, season, episode, steps);
+        if (!resolved) return DEBUG ? debugStream(steps.join(' | ')) : [];
 
         const extracted = await fetchM3u8(resolved.domain, resolved.config);
-        if (!extracted || !extracted.url) return [];
+        if (!extracted || !extracted.url) {
+            steps.push('fetchM3u8 boş döndü');
+            return DEBUG ? debugStream(steps.join(' | ')) : [];
+        }
 
         // m3u8 CDN'i embed host'unun Referer'ını ister; origin seviyesi yeterli.
         const referer = extracted.embedOrigin ? `${extracted.embedOrigin}/` : `${resolved.domain}/`;
@@ -315,8 +339,8 @@ async function getStreams(tmdbId, mediaType = 'movie', season = 1, episode = 1) 
             headers: streamHeaders(referer),
             subtitles
         }];
-    } catch {
-        return [];
+    } catch (e) {
+        return DEBUG ? debugStream(`HATA: ${e.message} | ${steps.join(' | ')}`) : [];
     }
 }
 

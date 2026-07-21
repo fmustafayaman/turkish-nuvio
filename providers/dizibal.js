@@ -1,6 +1,6 @@
 /**
  * dizibal - Built from src/dizibal/
- * Generated: 2026-07-21T21:12:16.972Z
+ * Generated: 2026-07-21T21:21:30.830Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -637,14 +637,28 @@ function normalizeSubtitle(sub, referer) {
     headers: streamHeaders(referer)
   };
 }
-function resolveTarget(tmdbId, mediaType, season, episode) {
+var DEBUG = false;
+function debugStream(msg) {
+  return [{
+    name: `DEBUG: ${msg}`,
+    title: "Dizibal te\u015Fhis",
+    url: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
+    quality: "debug",
+    headers: {},
+    provider: "dizibal",
+    type: "m3u8"
+  }];
+}
+function resolveTarget(tmdbId, mediaType, season, episode, steps) {
   return __async(this, null, function* () {
     const type = normalizeMediaType(mediaType);
     const { title, originalTitle, turkishTitle, year } = yield getTmdbInfo(tmdbId, type);
     const targets = [...new Set([turkishTitle, title, originalTitle].filter(Boolean))];
+    steps == null ? void 0 : steps.push(`tmdb t="${title}" tr="${turkishTitle}" o="${originalTitle}"`);
     if (!targets.length)
       return null;
     const { domain, items } = yield searchContent(tmdbId, type, targets, year);
+    steps == null ? void 0 : steps.push(`arama domain=${domain || "yok"} aday=${items.length}`);
     if (!domain)
       return null;
     for (const item of items.slice(0, 5)) {
@@ -657,19 +671,23 @@ function resolveTarget(tmdbId, mediaType, season, episode) {
       } catch (e) {
       }
     }
+    steps == null ? void 0 : steps.push("hi\xE7bir aday ge\xE7erli stream config vermedi");
     return null;
   });
 }
 function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
   return __async(this, null, function* () {
+    const steps = [];
     try {
       console.log(`[Dizibal v1.3.0] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
-      const resolved = yield resolveTarget(tmdbId, mediaType, season, episode);
+      const resolved = yield resolveTarget(tmdbId, mediaType, season, episode, steps);
       if (!resolved)
-        return [];
+        return DEBUG ? debugStream(steps.join(" | ")) : [];
       const extracted = yield fetchM3u8(resolved.domain, resolved.config);
-      if (!extracted || !extracted.url)
-        return [];
+      if (!extracted || !extracted.url) {
+        steps.push("fetchM3u8 bo\u015F d\xF6nd\xFC");
+        return DEBUG ? debugStream(steps.join(" | ")) : [];
+      }
       const referer = extracted.embedOrigin ? `${extracted.embedOrigin}/` : `${resolved.domain}/`;
       const subtitles = extracted.subtitles.map((sub) => normalizeSubtitle(sub, referer)).filter(Boolean);
       let masterText = null;
@@ -694,7 +712,7 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
         subtitles
       }];
     } catch (e) {
-      return [];
+      return DEBUG ? debugStream(`HATA: ${e.message} | ${steps.join(" | ")}`) : [];
     }
   });
 }

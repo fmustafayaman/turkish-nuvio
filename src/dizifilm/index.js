@@ -137,19 +137,39 @@ async function resolveEpisode(domain, candidate, tmdbId, season, episode) {
     };
 }
 
+// Geçici teşhis: Nuvio'da log görünmediği için, akışın hangi aşamada
+// takıldığını kaynak listesinde bir satır olarak gösterir (bkz. fullhdfilm).
+const DEBUG = false;
+
+function debugStream(msg) {
+    return [{
+        name: `DEBUG: ${msg}`,
+        title: 'Dizifilm teşhis',
+        url: 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',
+        quality: 'debug',
+        headers: {},
+        provider: 'dizifilm',
+        type: 'm3u8'
+    }];
+}
+
 // Film/dizi bölümünü çözüp vidlop part'larını ve sayfa bilgilerini döndürür.
-// Hem getStreams hem getSubtitles tarafından paylaşılır.
-async function resolveTarget(tmdbId, mediaType, season, episode) {
+// Hem getStreams hem getSubtitles tarafından paylaşılır. `steps` verilirse
+// (yalnızca getStreams'in DEBUG modu) her aşamayı teşhis için biriktirir.
+async function resolveTarget(tmdbId, mediaType, season, episode, steps) {
     const type = mediaType === 'tv' ? 'tv' : 'movie';
     const { title, originalTitle, turkishTitle, year } = await getTmdbInfo(tmdbId, type);
     const targets = [...new Set([turkishTitle, title, originalTitle].filter(Boolean))];
+    steps?.push(`tmdb t="${title}" tr="${turkishTitle}" o="${originalTitle}"`);
     if (!targets.length) return null;
 
     const contentType = expectedContentType(type);
     let resolved = null;
+    let totalCandidates = 0;
 
     for (const domain of DOMAIN_CANDIDATES) {
         const candidates = await searchCandidates(domain, targets, year, contentType);
+        totalCandidates += candidates.length;
         for (const candidate of candidates.slice(0, 5)) {
             try {
                 if (type === 'tv') {
@@ -164,6 +184,7 @@ async function resolveTarget(tmdbId, mediaType, season, episode) {
         }
         if (resolved) break;
     }
+    steps?.push(`arama aday=${totalCandidates} resolved=${!!resolved}`);
 
     if (!resolved || !resolved.parts.length) return null;
 
@@ -175,10 +196,11 @@ async function resolveTarget(tmdbId, mediaType, season, episode) {
 }
 
 async function getStreams(tmdbId, mediaType = 'movie', season = 1, episode = 1) {
+    const steps = [];
     try {
-        console.log(`[Dizifilm v1.6.1] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
-        const resolved = await resolveTarget(tmdbId, mediaType, season, episode);
-        if (!resolved) return [];
+        console.log(`[Dizifilm v1.7.0] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
+        const resolved = await resolveTarget(tmdbId, mediaType, season, episode, steps);
+        if (!resolved) return DEBUG ? debugStream(steps.join(' | ')) : [];
         const mediaTitle = resolved.mediaTitle;
 
         const streams = [];
@@ -212,9 +234,13 @@ async function getStreams(tmdbId, mediaType = 'movie', season = 1, episode = 1) 
             }
         }
 
+        if (!streams.length) {
+            steps.push(`part=${resolved.parts.length} çıkarıldı ama stream 0`);
+            return DEBUG ? debugStream(steps.join(' | ')) : [];
+        }
         return streams;
-    } catch {
-        return [];
+    } catch (e) {
+        return DEBUG ? debugStream(`HATA: ${e.message} | ${steps.join(' | ')}`) : [];
     }
 }
 

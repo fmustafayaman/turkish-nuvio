@@ -1,5 +1,4 @@
 import { DEFAULT_HEADERS } from './constants.js';
-import { getTmdbApiKey } from '../shared/tmdb.js';
 import { withTimeout, timeoutSignal, DEFAULT_TIMEOUT_MS } from '../shared/http.js';
 
 export async function fetchJson(url, options = {}) {
@@ -37,37 +36,6 @@ export async function fetchWithRedirect(url, options = {}) {
 
         return response.url;
     })(), timeout, url);
-}
-
-export async function getTmdbInfo(tmdbId, mediaType) {
-    const apiKey = getTmdbApiKey();
-    if (!apiKey) return { title: '', originalTitle: '' };
-
-    try {
-        const type = mediaType === 'tv' ? 'tv' : 'movie';
-        const url = `https://api.themoviedb.org/3/${type}/${tmdbId}?api_key=${apiKey}`;
-        const data = await fetchJson(url);
-        return {
-            title: data.name || data.title || data.original_title || '',
-            originalTitle: data.original_title || data.original_name || ''
-        };
-    } catch {
-        return { title: '', originalTitle: '' };
-    }
-}
-
-export async function getImdbId(tmdbId, mediaType) {
-    const apiKey = getTmdbApiKey();
-    if (!apiKey) return null;
-
-    try {
-        const type = mediaType === 'tv' ? 'tv' : 'movie';
-        const url = `https://api.themoviedb.org/3/${type}/${tmdbId}/external_ids?api_key=${apiKey}`;
-        const data = await fetchJson(url);
-        return data.imdb_id || null;
-    } catch {
-        return null;
-    }
 }
 
 export async function resolveEpisodeMapping(imdbId, season, episode) {

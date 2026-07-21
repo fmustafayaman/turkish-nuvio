@@ -1,8 +1,8 @@
-import { getTmdbInfo, getImdbId, resolveEpisodeMapping } from './utils.js';
+import { resolveEpisodeMapping } from './utils.js';
 import { findByTmdbId, getEpisodeVideos, getEpisodes, findEpisode } from './episodes.js';
 import { extractByEmbedId, parseEmbedIdFromUrl, extractStreams } from './extractor.js';
 import { createTtlCache } from '../shared/cache.js';
-import { tmdbApiKeySettingsLayout } from '../shared/tmdb.js';
+import { getTmdbInfo, tmdbApiKeySettingsLayout } from '../shared/tmdb.js';
 
 // Bir bölümün episode-videos listesindeki TÜM Tau Video kaynaklarını çözer.
 // Tek episode-videos çağrısı + kaynak başına bir tau-video API çağrısı; eski
@@ -72,7 +72,9 @@ async function getStreams(tmdbId, mediaType = 'tv', season = 1, episode = 1) {
         console.log('[Animecix] episode-videos boş, mapping deneniyor');
         let mappedEpisode = null;
         try {
-            const imdbId = await getImdbId(tmdbId, mediaType);
+            // getTmdbInfo cache'li (shared/tmdb.js); adım 1'deki resolveSeries
+            // çağrısıyla aynı veriyi tekrar upstream'e gitmeden döner.
+            const { imdbId } = await getTmdbInfo(tmdbId, mediaType);
             if (imdbId) {
                 const mapping = await resolveEpisodeMapping(imdbId, s, e);
                 mappedEpisode = mapping?.mal_episode || null;

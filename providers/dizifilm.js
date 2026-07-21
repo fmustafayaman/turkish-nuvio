@@ -1,6 +1,6 @@
 /**
  * dizifilm - Built from src/dizifilm/
- * Generated: 2026-07-21T21:12:16.975Z
+ * Generated: 2026-07-21T21:21:30.833Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -1368,17 +1368,32 @@ function resolveEpisode(domain, candidate, tmdbId, season, episode) {
     };
   });
 }
-function resolveTarget(tmdbId, mediaType, season, episode) {
+var DEBUG = false;
+function debugStream(msg) {
+  return [{
+    name: `DEBUG: ${msg}`,
+    title: "Dizifilm te\u015Fhis",
+    url: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
+    quality: "debug",
+    headers: {},
+    provider: "dizifilm",
+    type: "m3u8"
+  }];
+}
+function resolveTarget(tmdbId, mediaType, season, episode, steps) {
   return __async(this, null, function* () {
     const type = mediaType === "tv" ? "tv" : "movie";
     const { title, originalTitle, turkishTitle, year } = yield getTmdbInfo(tmdbId, type);
     const targets = [...new Set([turkishTitle, title, originalTitle].filter(Boolean))];
+    steps == null ? void 0 : steps.push(`tmdb t="${title}" tr="${turkishTitle}" o="${originalTitle}"`);
     if (!targets.length)
       return null;
     const contentType = expectedContentType(type);
     let resolved = null;
+    let totalCandidates = 0;
     for (const domain of DOMAIN_CANDIDATES) {
       const candidates = yield searchCandidates(domain, targets, year, contentType);
+      totalCandidates += candidates.length;
       for (const candidate of candidates.slice(0, 5)) {
         try {
           if (type === "tv") {
@@ -1395,6 +1410,7 @@ function resolveTarget(tmdbId, mediaType, season, episode) {
       if (resolved)
         break;
     }
+    steps == null ? void 0 : steps.push(`arama aday=${totalCandidates} resolved=${!!resolved}`);
     if (!resolved || !resolved.parts.length)
       return null;
     const suffix = year ? ` (${year})` : "";
@@ -1404,11 +1420,12 @@ function resolveTarget(tmdbId, mediaType, season, episode) {
 }
 function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
   return __async(this, null, function* () {
+    const steps = [];
     try {
-      console.log(`[Dizifilm v1.6.1] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
-      const resolved = yield resolveTarget(tmdbId, mediaType, season, episode);
+      console.log(`[Dizifilm v1.7.0] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
+      const resolved = yield resolveTarget(tmdbId, mediaType, season, episode, steps);
       if (!resolved)
-        return [];
+        return DEBUG ? debugStream(steps.join(" | ")) : [];
       const mediaTitle = resolved.mediaTitle;
       const streams = [];
       const seen = /* @__PURE__ */ new Set();
@@ -1438,9 +1455,13 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
           });
         }
       }
+      if (!streams.length) {
+        steps.push(`part=${resolved.parts.length} \xE7\u0131kar\u0131ld\u0131 ama stream 0`);
+        return DEBUG ? debugStream(steps.join(" | ")) : [];
+      }
       return streams;
     } catch (e) {
-      return [];
+      return DEBUG ? debugStream(`HATA: ${e.message} | ${steps.join(" | ")}`) : [];
     }
   });
 }
