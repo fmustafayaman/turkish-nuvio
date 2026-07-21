@@ -11,7 +11,9 @@
     "build:watch": "nodemon --watch src -e js,json --exec 'node build.js'",
     "start": "node server.js",
     "test": "node test_animecix.js",
-    "test:fullhdfilm": "node test_fullhdfilm.js"
+    "test:fullhdfilm": "node test_fullhdfilm.js",
+    "test:dizifilm": "node test_dizifilm.js",
+    "check:domains": "node scripts/check-domains.js"
   },
   "devDependencies": {
     "cheerio-without-node-native": "^0.20.2",

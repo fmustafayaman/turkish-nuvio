@@ -40,8 +40,11 @@ Testler:
 ```bash
 npm test                    # animecix uçtan uca test (test_animecix.js)
 npm run test:fullhdfilm     # fullhdfilm test harness'ı
-node test_dizifilm.js       # dizifilm test harness'ı
+npm run test:dizifilm       # dizifilm test harness'ı
+npm run check:domains       # her provider'ın domain adaylarının canlı olup olmadığını kontrol eder
 ```
+
+Site domain'leri sık değiştiği için (özellikle fullhdfilm/dizifilm) `.github/workflows/health-check.yml` her gün build + testleri + `check:domains`'i çalıştırır; bir şey bozulursa repo'da otomatik bir issue açar/günceller, düzelince kapatır.
 
 Hızlı tek provider testi (build sonrası bundle üzerinden):
 
