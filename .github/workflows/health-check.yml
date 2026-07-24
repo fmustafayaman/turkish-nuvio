@@ -40,7 +40,9 @@ jobs:
       - name: Domain sağlık kontrolü (+ otomatik düzeltme)
         id: domains
         continue-on-error: true
-        run: npm run check:domains -- --fix 2>&1 | tee domains.log
+        run: |
+          set -o pipefail
+          npm run check:domains -- --fix 2>&1 | tee domains.log
 
       - name: Domain düzeltmesi var mı?
         id: fix_diff
@@ -58,17 +60,23 @@ jobs:
       - name: Animecix testi
         id: test_animecix
         continue-on-error: true
-        run: npm test 2>&1 | tee test-animecix.log
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee test-animecix.log
 
       - name: FullHDFilm testi
         id: test_fullhdfilm
         continue-on-error: true
-        run: npm run test:fullhdfilm 2>&1 | tee test-fullhdfilm.log
+        run: |
+          set -o pipefail
+          npm run test:fullhdfilm 2>&1 | tee test-fullhdfilm.log
 
       - name: Dizifilm testi
         id: test_dizifilm
         continue-on-error: true
-        run: npm run test:dizifilm 2>&1 | tee test-dizifilm.log
+        run: |
+          set -o pipefail
+          npm run test:dizifilm 2>&1 | tee test-dizifilm.log
 
       # Sözleşme (CLAUDE.md) doğrulaması: yukarıdaki testler "en az 1 stream
       # var mı" bakar, bu ise dönen stream objelerinin gerçek şeklini
@@ -76,7 +84,9 @@ jobs:
       - name: Stream şeması kontrolü
         id: schema
         continue-on-error: true
-        run: npm run check:schema 2>&1 | tee schema.log
+        run: |
+          set -o pipefail
+          npm run check:schema 2>&1 | tee schema.log
 
       # Domain otomatik düzeltildiyse VE tüm testler hâlâ geçiyorsa
       # (yani sadece domain değişmiş, scraping mantığı bozulmamış):
