@@ -244,22 +244,146 @@ async function extractSobreatsesuyp(embedUrl, referer) {
     return results;
 }
 
+// Ok.ru / odnoklassniki — videoPlayerMetadata API.
+async function extractOkRu(embedUrl) {
+    const idMatch = /(?:ok\.ru|odnoklassniki\.ru)\/(?:videoembed|video|live)\/(\d+)/i.exec(embedUrl)
+        || /[?&]mid=(\d+)/i.exec(embedUrl);
+    if (!idMatch) return [];
+
+    const mid = idMatch[1];
+    let raw;
+    try {
+        const response = await fetch('https://www.ok.ru/dk', {
+            method: 'POST',
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Referer': `https://ok.ru/videoembed/${mid}`,
+                'Origin': 'https://ok.ru',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: `cmd=videoPlayerMetadata&mid=${mid}`
+        });
+        if (!response.ok) return [];
+        raw = await response.text();
+    } catch {
+        return [];
+    }
+
+    let data;
+    try {
+        data = JSON.parse(raw);
+    } catch {
+        return [];
+    }
+    if (!data || data.error) return [];
+
+    const results = [];
+    const push = (url, label) => {
+        if (!url || !/^https?:\/\//.test(url)) return;
+        results.push({
+            url,
+            host: label ? `OK.ru ${label}` : 'OK.ru',
+            type: /\.m3u8/i.test(url) ? 'm3u8' : 'mp4',
+            headers: { Referer: 'https://ok.ru/', 'User-Agent': 'Mozilla/5.0' },
+            subtitles: []
+        });
+    };
+
+    if (data.hlsManifestUrl) push(data.hlsManifestUrl, 'HLS');
+    if (data.hlsMasterPlaylistUrl) push(data.hlsMasterPlaylistUrl, 'HLS');
+    if (Array.isArray(data.videos)) {
+        for (const v of data.videos) {
+            if (v && v.url) push(v.url, v.name || v.type || '');
+        }
+    }
+    return results;
+}
+
+// Generic: embed sayfasında doğrudan m3u8/mp4 URL yakala (boosterx, pxplayer vb.).
+async function extractGenericStream(embedUrl, referer, hostName) {
+    let html;
+    try {
+        html = await fetchText(embedUrl, { headers: { Referer: referer } });
+    } catch {
+        return [];
+    }
+
+    const found = new Set();
+    const patterns = [
+        /https?:\/\/[^"'\\\s<>]+?\.m3u8[^"'\\\s<>]*/gi,
+        /https?:\/\/[^"'\\\s<>]+?\.mp4[^"'\\\s<>]*/gi,
+        /["']file["']\s*[:=]\s*["'](https?:[^"']+)["']/gi,
+        /["']src["']\s*[:=]\s*["'](https?:[^"']+\.(?:m3u8|mp4)[^"']*)["']/gi,
+        /source\s+src=["'](https?:[^"']+)["']/gi
+    ];
+
+    for (const re of patterns) {
+        let m;
+        while ((m = re.exec(html)) !== null) {
+            const url = (m[1] || m[0]).replace(/\\u0026/g, '&').replace(/\\\//g, '/');
+            if (/^https?:\/\//.test(url) && !/google|facebook|analytics|parklogic/i.test(url)) {
+                found.add(url);
+            }
+        }
+    }
+
+    const origin = originOf(embedUrl);
+    return [...found].map(url => ({
+        url,
+        host: hostName || 'Embed',
+        type: /\.m3u8/i.test(url) ? 'm3u8' : 'mp4',
+        headers: { Referer: origin ? `${origin}/` : referer },
+        subtitles: collectSubtitles(html)
+    }));
+}
+
+// Sitede geçen ölü host adlarını bilinen canlı mirror'lara çevir.
+// Örn. watch.trplayer.site (DNS yok) → watch.trplayer.com
+const HOST_REWRITES = [
+    [/^(https?:\/\/)(?:www\.)?watch\.trplayer\.site(\/|$)/i, '$1watch.trplayer.com$2'],
+    [/^(https?:\/\/)(?:www\.)?trplayer\.site(\/|$)/i, '$1watch.trplayer.com$2'],
+    [/^(https?:\/\/)(?:www\.)?trplayer\.org(\/|$)/i, '$1watch.trplayer.com$2']
+];
+
+function rewriteEmbedUrl(url) {
+    let out = String(url || '').trim();
+    for (const [re, rep] of HOST_REWRITES) {
+        out = out.replace(re, rep);
+    }
+    return out;
+}
+
 // Verilen embed/host URL'sini uygun extractor'a yönlendirir.
 export async function extractHost(embedUrl, referer) {
     try {
-        if (/rapidvid|rapid/i.test(embedUrl)) {
-            return await extractRapidVid(embedUrl, referer);
+        if (!embedUrl || !/^https?:\/\//i.test(embedUrl)) return [];
+        const url = rewriteEmbedUrl(embedUrl);
+
+        if (/rapidvid|rapid/i.test(url)) {
+            return await extractRapidVid(url, referer);
         }
-        if (/trplayer|turkeyplayer/i.test(embedUrl)) {
-            return await extractTurkeyPlayer(embedUrl, referer);
+        if (/trplayer|turkeyplayer|trstx/i.test(url)) {
+            return await extractTurkeyPlayer(url, referer);
         }
-        if (/vidmoxy/i.test(embedUrl)) {
-            return await extractVidMoxy(embedUrl, referer);
+        if (/vidmoxy/i.test(url)) {
+            return await extractVidMoxy(url, referer);
         }
-        if (/sobreatsesuyp|tovreatmemuyp|sobreat/i.test(embedUrl)) {
-            return await extractSobreatsesuyp(embedUrl, referer);
+        if (/sobreatsesuyp|tovreatmemuyp|sobreat/i.test(url)) {
+            return await extractSobreatsesuyp(url, referer);
         }
-        return [];
+        if (/(?:ok\.ru|odnoklassniki)/i.test(url)) {
+            const ok = await extractOkRu(url);
+            if (ok.length) return ok;
+        }
+        if (/boosterx|pxplayer|fxplayer|vidmoly|filemoon|dood|streamtape|mixdrop/i.test(url)) {
+            const host = (url.match(/^https?:\/\/([^/]+)/i) || [])[1] || 'Embed';
+            const generic = await extractGenericStream(url, referer, host.split('.')[0]);
+            if (generic.length) return generic;
+        }
+
+        // Son çare: bilinen host değilse generic dene
+        return await extractGenericStream(url, referer, 'Embed');
     } catch {
         return [];
     }

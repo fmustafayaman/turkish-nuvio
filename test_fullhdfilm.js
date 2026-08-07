@@ -2,13 +2,15 @@
  * FullHDFilmizlesene provider test scripti
  *
  * Usage:
- *   npm run build && node test_fullhdfilm.js 27205 movie
- *   node test_fullhdfilm.js 603 movie   (The Matrix)
+ *   npm run build && node test_fullhdfilm.js 24428 movie   (Yenilmezler / Avengers)
+ *   node test_fullhdfilm.js 30634 movie  (Organize İşler)
  */
 
 const { getStreams } = require('./providers/fullhdfilm.js');
 
-const TMDB_ID = parseInt(process.argv[2] || '27205', 10);
+// Varsayılan: Yenilmezler — sitede TRPlayer kaynağı olan bilinen çalışan örnek.
+// Not: Bazı filmler yalnızca ölü embed host (boosterx/pxplayer) taşıyor; o durumda 0 stream normal.
+const TMDB_ID = parseInt(process.argv[2] || '24428', 10);
 const MEDIA_TYPE = process.argv[3] || 'movie';
 
 async function main() {

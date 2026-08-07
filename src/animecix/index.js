@@ -43,7 +43,7 @@ async function resolveSeries(tmdbId, mediaType) {
 
 async function getStreams(tmdbId, mediaType = 'tv', season = 1, episode = 1) {
     try {
-        console.log(`[Animecix v1.2.3] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
+        console.log(`[Animecix v1.3.3] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
 
         const resolved = await resolveSeries(tmdbId, mediaType);
         if (!resolved) return [];

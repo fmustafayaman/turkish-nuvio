@@ -34,6 +34,31 @@ export async function postText(url, referer) {
     })(), DEFAULT_TIMEOUT_MS, url);
 }
 
+// application/x-www-form-urlencoded POST (ajax_search vb.)
+export async function postForm(url, body, options = {}) {
+    const timeout = options.timeout || DEFAULT_TIMEOUT_MS;
+    const referer = options.referer || '';
+    const origin = options.origin || '';
+    return await withTimeout((async () => {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                ...SITE_HEADERS,
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-Requested-With': 'XMLHttpRequest',
+                Referer: referer,
+                ...(origin ? { Origin: origin } : {})
+            },
+            body,
+            signal: timeoutSignal(timeout)
+        });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status} on ${url}`);
+        }
+        return await response.text();
+    })(), timeout, url);
+}
+
 // scx içindeki linkler ROT13 + base64 ile şifrelenmiş.
 export function rot13(input) {
     return String(input).replace(/[a-zA-Z]/g, c => {

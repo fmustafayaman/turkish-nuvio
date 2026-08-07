@@ -1,6 +1,6 @@
 /**
  * animecix - Built from src/animecix/
- * Generated: 2026-07-21T21:21:30.793Z
+ * Generated: 2026-08-07T22:02:37.660Z
  */
 var __defProp = Object.defineProperty;
 var __getOwnPropSymbols = Object.getOwnPropertySymbols;
@@ -57,7 +57,7 @@ var API_URL = "https://mangacix.net/";
 var VIDEO_PLAYER = "tau-video.xyz";
 var DEFAULT_HEADERS = {
   "Accept": "application/json",
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 };
 var STREAM_HEADERS = {
   "User-Agent": DEFAULT_HEADERS["User-Agent"],
@@ -573,7 +573,7 @@ function resolveSeries(tmdbId, mediaType) {
 function getStreams(tmdbId, mediaType = "tv", season = 1, episode = 1) {
   return __async(this, null, function* () {
     try {
-      console.log(`[Animecix v1.2.3] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
+      console.log(`[Animecix v1.3.3] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
       const resolved = yield resolveSeries(tmdbId, mediaType);
       if (!resolved)
         return [];
