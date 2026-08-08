@@ -1,25 +1,31 @@
 import { getTmdbInfo, tmdbApiKeySettingsLayout } from '../shared/tmdb.js';
-import { decodeBase64 } from '../shared/base64.js';
 import { DOMAIN_CANDIDATES } from './constants.js';
-import { fetchText, postForm, decodeScxLink, titlesMatch, normalizeTitle } from './utils.js';
+import { fetchText, decodeScxLink, titlesMatch, normalizeTitle, absoluteUrl } from './utils.js';
 import { extractHost } from './extractors.js';
 import { maybeEmbedSubsUrl, embedSubsSettingsLayout, ensureHlsExtHint } from '../shared/hls.js';
 
+// .mx (klasik şablon) scx anahtarları — atom en sık; dil bazlı tr/en de görülebilir.
 const SCX_KEYS = ['atom', 'advid', 'advidprox', 'proton', 'fast', 'fastly', 'tr', 'en'];
 
-// Eski site şablonu: <li class="film"> + film-title
-function parseLegacySearchResults(html) {
+// Klasik arama HTML'i:
+// <li class="film">
+//   <a class="tt" href="https://www.fullhdfilmizlesene.mx/film/...">...</a>
+//   <h2 class="film-tt"><span class="film-title">...</span> <span class="kt">...</span></h2>
+//   <span class="film-yil">2026</span>
+function parseSearchResults(html, baseUrl) {
     const results = [];
     const blocks = html.split('<li class="film">').slice(1);
     for (const block of blocks) {
         const href = /<a[^>]*class="tt"[^>]*href="([^"]+)"/.exec(block)
-            || /href="([^"]+)"/.exec(block);
+            || /href="([^"]*\/film\/[^"]+)"/.exec(block);
         const title = /<span class="film-title">([^<]+)<\/span>/.exec(block);
         const original = /<span class="kt">([^<]+)<\/span>/.exec(block);
         const year = /<span class="film-yil">\s*(\d{4})\s*<\/span>/.exec(block);
         if (!href || !title) continue;
+        const url = absoluteUrl(href[1], baseUrl);
+        if (!url) continue;
         results.push({
-            url: href[1],
+            url,
             title: title[1].trim(),
             original: original ? original[1].trim() : '',
             year: year ? year[1] : ''
@@ -28,48 +34,16 @@ function parseLegacySearchResults(html) {
     return results;
 }
 
-// Yeni site ajax_search HTML'i:
-// <li> <a title="Kara Şövalye" href="https://fullhdfilmizlesene.co/kara-sovalye-izle"> ...
-function parseAjaxSearchResults(html) {
-    const results = [];
-    const seen = new Set();
-
-    const push = (title, url) => {
-        if (!title || !url || seen.has(url)) return;
-        if (/youtube|pinterest|reddit|facebook|twitter/i.test(url)) return;
-        if (!/-izle/i.test(url) && !/\/film\//i.test(url)) return;
-        seen.add(url);
-        results.push({ url, title: title.trim(), original: '', year: '' });
-    };
-
-    for (const m of html.matchAll(/<a[^>]*title="([^"]+)"[^>]*href="([^"]+)"/gi)) {
-        push(m[1], m[2]);
-    }
-    for (const m of html.matchAll(/<a[^>]*href="([^"]+)"[^>]*title="([^"]+)"/gi)) {
-        push(m[2], m[1]);
-    }
-
-    return results;
-}
-
 function langLabel(key, subKey) {
     const lang = subKey || key;
     if (lang === 'tr' || /dublaj/i.test(lang)) return 'Türkçe Dublaj';
     if (lang === 'en' || /altyaz/i.test(lang)) return 'Altyazılı';
-    if (/fragman/i.test(lang)) return 'Fragman';
+    if (lang === 'atom') return 'Türkçe';
     return 'Türkçe';
 }
 
-// part id → etiket (turkcedublaj0, turkcealtyazili1, 0, 1, ...)
-function partLabel(partId) {
-    const id = String(partId || '');
-    if (/fragman/i.test(id)) return 'Fragman';
-    if (/dublaj/i.test(id)) return 'Türkçe Dublaj';
-    if (/altyaz/i.test(id)) return 'Altyazılı';
-    return 'Türkçe';
-}
-
-// scx = {...}; bloğundan dil bazlı host URL'lerini çıkarır (eski şablon).
+// scx = {...}; bloğundan dil bazlı host URL'lerini çıkarır.
+// Örn. {"atom":{"sx":{"t":["nUE0p..."]}}} → rot13+base64 → https://rapidvid.net/vod/...
 function parseScx(html) {
     const match = /scx\s*=\s*(\{[\s\S]*?\});/.exec(html);
     if (!match) return [];
@@ -82,73 +56,51 @@ function parseScx(html) {
     }
 
     const entries = [];
-    for (const key of SCX_KEYS) {
+    const keys = SCX_KEYS.slice();
+    // Bilinmeyen anahtarları da dene (site yeni player eklerse).
+    for (const k of Object.keys(scx || {})) {
+        if (!keys.includes(k)) keys.push(k);
+    }
+
+    for (const key of keys) {
         const t = scx[key]?.sx?.t;
         if (!t) continue;
 
         if (Array.isArray(t)) {
             for (const enc of t) {
                 const url = decodeScxLink(enc);
-                if (url) entries.push({ url, label: langLabel(key) });
+                if (url && /^https?:\/\//i.test(url)) {
+                    entries.push({ url, label: langLabel(key) });
+                }
             }
         } else if (typeof t === 'object') {
             for (const subKey of Object.keys(t)) {
                 const url = decodeScxLink(t[subKey]);
-                if (url) entries.push({ url, label: langLabel(key, subKey) });
+                if (url && /^https?:\/\//i.test(url)) {
+                    entries.push({ url, label: langLabel(key, subKey) });
+                }
             }
         }
     }
-    return entries;
-}
 
-// Yeni site: pdata['prt_<id>'] = base64 (prefix ters çevrilmiş string ile birleşir)
-// rvali('BSZtFmcmlGP') === 'PGlmcmFtZSB' === base64('<iframe ')
-function reverseString(s) {
-    let out = '';
-    for (let i = s.length - 1; i >= 0; i--) out += s[i];
-    return out;
-}
-
-function parsePdata(html) {
-    const entries = [];
-    // Prefix sitede rvali('BSZtFmcmlGP') ile üretiliyor → reverse → 'PGlmcmFtZSB' (<iframe )
-    const prefixKeyMatch = /rvali\(['"]([A-Za-z0-9+/=]+)['"]\)/.exec(html);
-    const prefix = reverseString(prefixKeyMatch ? prefixKeyMatch[1] : 'BSZtFmcmlGP');
-    // img placeholder base64 başlangıcı — bu durumda prefix eklenmez
-    const imgPrefix = 'PGltZyB3aWR0aD0iMTAwJSIgaGVpZ2';
-
-    const re = /pdata\[['"]prt_([^'"]+)['"]\]\s*=\s*['"]([^'"]+)['"]/g;
-    let m;
-    while ((m = re.exec(html)) !== null) {
-        const partId = m[1];
-        const data = m[2];
-        if (/fragman/i.test(partId)) continue;
-
-        const full = data.substring(0, 30) === imgPrefix ? data : (prefix + data);
-        let iframeHtml;
-        try {
-            iframeHtml = decodeBase64(full);
-        } catch {
-            continue;
+    // scx yoksa / bozulmuşsa data-src iframe yedek
+    if (!entries.length) {
+        const re = /(?:data-src|src)\s*=\s*["'](https?:\/\/[^"']+)["']/gi;
+        let m;
+        const seen = new Set();
+        while ((m = re.exec(html)) !== null) {
+            const url = m[1].trim();
+            if (seen.has(url)) continue;
+            if (/google|facebook|analytics|gstatic|schema\.org/i.test(url)) continue;
+            if (!/(?:rapidvid|vidmoxy|trplayer|sobreat|ok\.ru|odnoklassniki|boosterx|pxplayer|fxplayer|embed|vod\/)/i.test(url)) {
+                continue;
+            }
+            seen.add(url);
+            entries.push({ url, label: 'Türkçe' });
         }
-        if (!iframeHtml) continue;
-
-        const src = /src\s*=\s*["']([^"']+)["']/i.exec(iframeHtml);
-        if (!src || !src[1]) continue;
-        const url = src[1].trim().replace(/\s+/g, '');
-        if (!/^https?:\/\//i.test(url)) continue;
-        if (/youtube\.com|youtu\.be/i.test(url)) continue;
-
-        entries.push({ url, label: partLabel(partId), partId });
     }
-    return entries;
-}
 
-// Film sayfasından embed URL'leri (yeni pdata veya eski scx).
-function parsePlayerEntries(html) {
-    const pdata = parsePdata(html);
-    if (pdata.length) return pdata;
-    return parseScx(html);
+    return entries;
 }
 
 // Geçici teşhis: Nuvio'da log görünmediği için, akışın hangi aşamada
@@ -173,14 +125,12 @@ async function searchOnDomain(domain, targets) {
     let totalResults = 0;
     let fetchErr = '';
     const origin = domain.replace(/\/+$/, '');
-    const referer = `${origin}/`;
 
     for (const query of targets) {
-        // 1) Yeni ajax_search (önerilen)
+        // Klasik GET /arama/<query> — .mx şablonu
         try {
-            const body = `action=ajax_search&arama_kelime=${encodeURIComponent(query)}`;
-            const html = await postForm(`${origin}/arama/`, body, { referer, origin });
-            const parsed = parseAjaxSearchResults(html);
+            const html = await fetchText(`${origin}/arama/${encodeURIComponent(query)}`);
+            const parsed = parseSearchResults(html, origin);
             totalResults += parsed.length;
             for (const r of parsed) {
                 if (seenUrls.has(r.url)) continue;
@@ -192,45 +142,25 @@ async function searchOnDomain(domain, targets) {
                 candidates.push(r);
             }
         } catch (e) {
-            fetchErr = `ajax:${e.message}`;
+            fetchErr = `get:${e.message}`;
         }
 
-        // 2) Eski GET /arama/<query>
-        try {
-            const html = await fetchText(`${origin}/arama/${encodeURIComponent(query)}`);
-            const parsed = parseLegacySearchResults(html);
-            totalResults += parsed.length;
-            for (const r of parsed) {
-                if (seenUrls.has(r.url)) continue;
-                if (!titlesMatch(r.title, targets) && !titlesMatch(r.original, targets)) continue;
-                seenUrls.add(r.url);
-                const exact = targets.map(normalizeTitle).includes(normalizeTitle(r.title)) ||
-                    targets.map(normalizeTitle).includes(normalizeTitle(r.original));
-                const yearMatch = false;
-                r.score = (exact ? 2 : 0) + (yearMatch ? 1 : 0);
-                candidates.push(r);
+        // Yedek: /arama/?s=
+        if (!candidates.length) {
+            try {
+                const html = await fetchText(`${origin}/arama/?s=${encodeURIComponent(query)}`);
+                const parsed = parseSearchResults(html, origin);
+                totalResults += parsed.length;
+                for (const r of parsed) {
+                    if (seenUrls.has(r.url)) continue;
+                    if (!titlesMatch(r.title, targets) && !titlesMatch(r.original, targets)) continue;
+                    seenUrls.add(r.url);
+                    r.score = 1;
+                    candidates.push(r);
+                }
+            } catch (e) {
+                fetchErr = fetchErr || `qs:${e.message}`;
             }
-        } catch (e) {
-            fetchErr = fetchErr || `get:${e.message}`;
-        }
-
-        // 3) GET /arama/?s=
-        try {
-            const html = await fetchText(`${origin}/arama/?s=${encodeURIComponent(query)}`);
-            const parsed = [
-                ...parseLegacySearchResults(html),
-                ...parseAjaxSearchResults(html)
-            ];
-            totalResults += parsed.length;
-            for (const r of parsed) {
-                if (seenUrls.has(r.url)) continue;
-                if (!titlesMatch(r.title, targets) && !titlesMatch(r.original, targets)) continue;
-                seenUrls.add(r.url);
-                r.score = 1;
-                candidates.push(r);
-            }
-        } catch {
-            // yoksay
         }
     }
 
@@ -263,9 +193,7 @@ async function getStreams(tmdbId, mediaType = 'movie', season = 1, episode = 1) 
             if (found.fetchErr) fetchErr = found.fetchErr;
 
             for (const r of found.candidates) {
-                // Yıl skoru (varsa)
                 if (year && r.year === String(year)) r.score = (r.score || 0) + 1;
-                // Tam eşleşme güçlendir
                 if (normTargets.includes(normalizeTitle(r.title)) ||
                     normTargets.includes(normalizeTitle(r.original))) {
                     r.score = Math.max(r.score || 0, 2);
@@ -291,7 +219,7 @@ async function getStreams(tmdbId, mediaType = 'movie', season = 1, episode = 1) 
         let entries = [];
         let scxErr = '';
 
-        // En iyi adaydan başlayarak kaynak içeren ilk filmi seç.
+        // En iyi adaydan başlayarak scx/embed içeren ilk filmi seç.
         for (const candidate of candidates.slice(0, 5)) {
             let pageHtml;
             try {
@@ -300,7 +228,7 @@ async function getStreams(tmdbId, mediaType = 'movie', season = 1, episode = 1) 
                 scxErr = `sayfa: ${e.message}`;
                 continue;
             }
-            const parsed = parsePlayerEntries(pageHtml);
+            const parsed = parseScx(pageHtml);
             if (parsed.length) {
                 match = candidate;
                 entries = parsed;
@@ -308,7 +236,7 @@ async function getStreams(tmdbId, mediaType = 'movie', season = 1, episode = 1) 
             }
         }
 
-        steps.push(`player entries=${entries.length}${scxErr ? ` ${scxErr}` : ''}`);
+        steps.push(`scx entries=${entries.length}${scxErr ? ` ${scxErr}` : ''}`);
 
         if (!match || !entries.length) {
             return DEBUG ? debugStream(steps.join(' | ')) : [];

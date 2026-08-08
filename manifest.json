@@ -1,6 +1,6 @@
 {
   "name": "Turkish Nuvio",
-  "version": "1.19.0",
+  "version": "1.20.0",
   "scrapers": [
     {
       "id": "animecix",
@@ -29,15 +29,15 @@
     {
       "id": "fullhdfilm",
       "name": "FullHDFilmizlesene",
-      "description": "Türkçe dublaj/altyazılı film kaynağı — fullhdfilmizlesene.co",
-      "version": "1.3.0",
+      "description": "Türkçe dublaj/altyazılı film kaynağı — fullhdfilmizlesene.mx",
+      "version": "1.4.0",
       "author": "turkish-nuvio",
       "supportedTypes": [
         "movie"
       ],
       "filename": "providers/fullhdfilm.js",
       "enabled": true,
-      "logo": "https://fullhdfilmizlesene.co/favicon.ico",
+      "logo": "https://www.fullhdfilmizlesene.mx/favicon.ico",
       "contentLanguage": [
         "tr"
       ],

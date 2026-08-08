@@ -1,16 +1,19 @@
 /**
- * FullHDFilmizlesene provider test scripti
+ * FullHDFilmizlesene provider test scripti (.mx)
  *
  * Usage:
- *   npm run build && node test_fullhdfilm.js 24428 movie   (Yenilmezler / Avengers)
- *   node test_fullhdfilm.js 30634 movie  (Organize İşler)
+ *   npm run build && node test_fullhdfilm.js
+ *   node test_fullhdfilm.js <tmdbId> movie
+ *
+ * Varsayılan: Hayvan Yarışı / Corrida dos Bichos (sitede güncel örnek).
+ * Not: .mx Cloudflare arkasında olabilir; bu ortamda 0 stream CF engeli demektir.
+ * Nuvio cihaz/ağında farklı davranabilir.
  */
 
 const { getStreams } = require('./providers/fullhdfilm.js');
 
-// Varsayılan: Yenilmezler — sitede TRPlayer kaynağı olan bilinen çalışan örnek.
-// Not: Bazı filmler yalnızca ölü embed host (boosterx/pxplayer) taşıyor; o durumda 0 stream normal.
-const TMDB_ID = parseInt(process.argv[2] || '24428', 10);
+// Varsayılan: Hayvan Yarışı / Corrida dos Bichos (TMDB 1263532) — .mx katalogunda mevcut.
+const TMDB_ID = parseInt(process.argv[2] || '1263532', 10);
 const MEDIA_TYPE = process.argv[3] || 'movie';
 
 async function main() {

@@ -17,7 +17,7 @@ https://raw.githubusercontent.com/fmustafayaman/turkish-nuvio/main/manifest.json
 | Provider | Site | İçerik | Format | Ayarlar |
 |----------|------|--------|--------|---------|
 | **Animecix** | animecix.tv | Anime (film + dizi) | mp4 | TMDB API anahtarı |
-| **FullHDFilmizlesene** | fullhdfilmizlesene.life | Film | m3u8 | Masaüstü altyazı, TMDB API anahtarı |
+| **FullHDFilmizlesene** | fullhdfilmizlesene.mx | Film | m3u8 | Masaüstü altyazı, TMDB API anahtarı |
 | **Dizifilm** | dizifilm.life | Film + dizi | m3u8 | Masaüstü altyazı, TMDB API anahtarı |
 | **Dizibal** | dizibal.com | Film + dizi | m3u8 | Masaüstü altyazı, TMDB API anahtarı |
 

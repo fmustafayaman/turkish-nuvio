@@ -1,13 +1,10 @@
 // FullHDFilmizlesene — Türkçe dublaj/altyazılı film kaynağı.
 // Domain sık değişebilir; alternatifler sırayla denenir.
-// 2026-08: .life/.nz/.de/.nl Cloudflare 403; güncel birincil .co
+// 2026-08: gerçek site www.fullhdfilmizlesene.mx (scx + /arama/ + /film/...).
+// fullhdfilmizlesene.co AYRI bir klon — katalog/player farklı; adaylara ekleme.
 export const DOMAIN_CANDIDATES = [
-    'https://fullhdfilmizlesene.co',
-    'https://www.fullhdfilmizlesene.co',
-    'https://www.fullhdfilmizlesene.nz',
-    'https://www.fullhdfilmizlesene.life',
-    'https://www.fullhdfilmizlesene.de',
-    'https://www.fullhdfilmizlesene.nl'
+    'https://www.fullhdfilmizlesene.mx',
+    'https://fullhdfilmizlesene.mx'
 ];
 
 export const SITE_HEADERS = {

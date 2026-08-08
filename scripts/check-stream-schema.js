@@ -14,7 +14,7 @@
 
 const PROVIDERS = [
     { id: 'animecix', args: ['37854', 'tv', 1, 1] },
-    { id: 'fullhdfilm', args: ['27205', 'movie'] },
+    { id: 'fullhdfilm', args: ['1263532', 'movie'] },
     { id: 'dizifilm', args: ['1396', 'tv', 1, 1] },
     { id: 'dizibal', args: ['1396', 'tv', 1, 1] },
 ];

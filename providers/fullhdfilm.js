@@ -1,6 +1,6 @@
 /**
  * fullhdfilm - Built from src/fullhdfilm/
- * Generated: 2026-08-07T22:02:37.716Z
+ * Generated: 2026-08-08T18:09:18.744Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -220,6 +220,17 @@ function getTmdbInfo(tmdbId, mediaType) {
   });
 }
 
+// src/fullhdfilm/constants.js
+var DOMAIN_CANDIDATES = [
+  "https://www.fullhdfilmizlesene.mx",
+  "https://fullhdfilmizlesene.mx"
+];
+var SITE_HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+  "Accept-Language": "tr-TR,tr;q=0.9,en;q=0.8"
+};
+
 // src/shared/base64.js
 var CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
 function atobPolyfill(input) {
@@ -242,21 +253,6 @@ function decodeBase64(input) {
   }
   return atobPolyfill(input);
 }
-
-// src/fullhdfilm/constants.js
-var DOMAIN_CANDIDATES = [
-  "https://fullhdfilmizlesene.co",
-  "https://www.fullhdfilmizlesene.co",
-  "https://www.fullhdfilmizlesene.nz",
-  "https://www.fullhdfilmizlesene.life",
-  "https://www.fullhdfilmizlesene.de",
-  "https://www.fullhdfilmizlesene.nl"
-];
-var SITE_HEADERS = {
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-  "Accept-Language": "tr-TR,tr;q=0.9,en;q=0.8"
-};
 
 // src/fullhdfilm/utils.js
 function fetchText(_0) {
@@ -290,29 +286,6 @@ function postText(url, referer) {
       }
       return yield response.text();
     }))(), DEFAULT_TIMEOUT_MS, url);
-  });
-}
-function postForm(_0, _1) {
-  return __async(this, arguments, function* (url, body, options = {}) {
-    const timeout = options.timeout || DEFAULT_TIMEOUT_MS;
-    const referer = options.referer || "";
-    const origin = options.origin || "";
-    return yield withTimeout((() => __async(this, null, function* () {
-      const response = yield fetch(url, {
-        method: "POST",
-        headers: __spreadValues(__spreadProps(__spreadValues({}, SITE_HEADERS), {
-          "Content-Type": "application/x-www-form-urlencoded",
-          "X-Requested-With": "XMLHttpRequest",
-          Referer: referer
-        }), origin ? { Origin: origin } : {}),
-        body,
-        signal: timeoutSignal(timeout)
-      });
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status} on ${url}`);
-      }
-      return yield response.text();
-    }))(), timeout, url);
   });
 }
 function rot13(input) {
@@ -375,6 +348,13 @@ function titlesMatch(candidate, targets) {
     }
     return tokenSubsetMatch(candidateTokens, tokenizeTitle(t));
   });
+}
+function absoluteUrl(href, base) {
+  if (!href)
+    return null;
+  if (/^https?:\/\//i.test(href))
+    return href;
+  return `${base.replace(/\/+$/, "")}/${href.replace(/^\/+/, "")}`;
 }
 
 // src/fullhdfilm/extractors.js
@@ -899,43 +879,25 @@ function embedSubsSettingsLayout() {
 
 // src/fullhdfilm/index.js
 var SCX_KEYS = ["atom", "advid", "advidprox", "proton", "fast", "fastly", "tr", "en"];
-function parseLegacySearchResults(html) {
+function parseSearchResults(html, baseUrl) {
   const results = [];
   const blocks = html.split('<li class="film">').slice(1);
   for (const block of blocks) {
-    const href = /<a[^>]*class="tt"[^>]*href="([^"]+)"/.exec(block) || /href="([^"]+)"/.exec(block);
+    const href = /<a[^>]*class="tt"[^>]*href="([^"]+)"/.exec(block) || /href="([^"]*\/film\/[^"]+)"/.exec(block);
     const title = /<span class="film-title">([^<]+)<\/span>/.exec(block);
     const original = /<span class="kt">([^<]+)<\/span>/.exec(block);
     const year = /<span class="film-yil">\s*(\d{4})\s*<\/span>/.exec(block);
     if (!href || !title)
       continue;
+    const url = absoluteUrl(href[1], baseUrl);
+    if (!url)
+      continue;
     results.push({
-      url: href[1],
+      url,
       title: title[1].trim(),
       original: original ? original[1].trim() : "",
       year: year ? year[1] : ""
     });
-  }
-  return results;
-}
-function parseAjaxSearchResults(html) {
-  const results = [];
-  const seen = /* @__PURE__ */ new Set();
-  const push = (title, url) => {
-    if (!title || !url || seen.has(url))
-      return;
-    if (/youtube|pinterest|reddit|facebook|twitter/i.test(url))
-      return;
-    if (!/-izle/i.test(url) && !/\/film\//i.test(url))
-      return;
-    seen.add(url);
-    results.push({ url, title: title.trim(), original: "", year: "" });
-  };
-  for (const m of html.matchAll(/<a[^>]*title="([^"]+)"[^>]*href="([^"]+)"/gi)) {
-    push(m[1], m[2]);
-  }
-  for (const m of html.matchAll(/<a[^>]*href="([^"]+)"[^>]*title="([^"]+)"/gi)) {
-    push(m[2], m[1]);
   }
   return results;
 }
@@ -945,18 +907,8 @@ function langLabel(key, subKey) {
     return "T\xFCrk\xE7e Dublaj";
   if (lang === "en" || /altyaz/i.test(lang))
     return "Altyaz\u0131l\u0131";
-  if (/fragman/i.test(lang))
-    return "Fragman";
-  return "T\xFCrk\xE7e";
-}
-function partLabel(partId) {
-  const id = String(partId || "");
-  if (/fragman/i.test(id))
-    return "Fragman";
-  if (/dublaj/i.test(id))
-    return "T\xFCrk\xE7e Dublaj";
-  if (/altyaz/i.test(id))
-    return "Altyaz\u0131l\u0131";
+  if (lang === "atom")
+    return "T\xFCrk\xE7e";
   return "T\xFCrk\xE7e";
 }
 function parseScx(html) {
@@ -971,70 +923,49 @@ function parseScx(html) {
     return [];
   }
   const entries = [];
-  for (const key of SCX_KEYS) {
+  const keys = SCX_KEYS.slice();
+  for (const k of Object.keys(scx || {})) {
+    if (!keys.includes(k))
+      keys.push(k);
+  }
+  for (const key of keys) {
     const t = (_b = (_a = scx[key]) == null ? void 0 : _a.sx) == null ? void 0 : _b.t;
     if (!t)
       continue;
     if (Array.isArray(t)) {
       for (const enc of t) {
         const url = decodeScxLink(enc);
-        if (url)
+        if (url && /^https?:\/\//i.test(url)) {
           entries.push({ url, label: langLabel(key) });
+        }
       }
     } else if (typeof t === "object") {
       for (const subKey of Object.keys(t)) {
         const url = decodeScxLink(t[subKey]);
-        if (url)
+        if (url && /^https?:\/\//i.test(url)) {
           entries.push({ url, label: langLabel(key, subKey) });
+        }
       }
     }
   }
-  return entries;
-}
-function reverseString(s) {
-  let out = "";
-  for (let i = s.length - 1; i >= 0; i--)
-    out += s[i];
-  return out;
-}
-function parsePdata(html) {
-  const entries = [];
-  const prefixKeyMatch = /rvali\(['"]([A-Za-z0-9+/=]+)['"]\)/.exec(html);
-  const prefix = reverseString(prefixKeyMatch ? prefixKeyMatch[1] : "BSZtFmcmlGP");
-  const imgPrefix = "PGltZyB3aWR0aD0iMTAwJSIgaGVpZ2";
-  const re = /pdata\[['"]prt_([^'"]+)['"]\]\s*=\s*['"]([^'"]+)['"]/g;
-  let m;
-  while ((m = re.exec(html)) !== null) {
-    const partId = m[1];
-    const data = m[2];
-    if (/fragman/i.test(partId))
-      continue;
-    const full = data.substring(0, 30) === imgPrefix ? data : prefix + data;
-    let iframeHtml;
-    try {
-      iframeHtml = decodeBase64(full);
-    } catch (e) {
-      continue;
+  if (!entries.length) {
+    const re = /(?:data-src|src)\s*=\s*["'](https?:\/\/[^"']+)["']/gi;
+    let m;
+    const seen = /* @__PURE__ */ new Set();
+    while ((m = re.exec(html)) !== null) {
+      const url = m[1].trim();
+      if (seen.has(url))
+        continue;
+      if (/google|facebook|analytics|gstatic|schema\.org/i.test(url))
+        continue;
+      if (!/(?:rapidvid|vidmoxy|trplayer|sobreat|ok\.ru|odnoklassniki|boosterx|pxplayer|fxplayer|embed|vod\/)/i.test(url)) {
+        continue;
+      }
+      seen.add(url);
+      entries.push({ url, label: "T\xFCrk\xE7e" });
     }
-    if (!iframeHtml)
-      continue;
-    const src = /src\s*=\s*["']([^"']+)["']/i.exec(iframeHtml);
-    if (!src || !src[1])
-      continue;
-    const url = src[1].trim().replace(/\s+/g, "");
-    if (!/^https?:\/\//i.test(url))
-      continue;
-    if (/youtube\.com|youtu\.be/i.test(url))
-      continue;
-    entries.push({ url, label: partLabel(partId), partId });
   }
   return entries;
-}
-function parsePlayerEntries(html) {
-  const pdata = parsePdata(html);
-  if (pdata.length)
-    return pdata;
-  return parseScx(html);
 }
 var DEBUG = false;
 function debugStream(msg) {
@@ -1055,12 +986,10 @@ function searchOnDomain(domain, targets) {
     let totalResults = 0;
     let fetchErr = "";
     const origin = domain.replace(/\/+$/, "");
-    const referer = `${origin}/`;
     for (const query of targets) {
       try {
-        const body = `action=ajax_search&arama_kelime=${encodeURIComponent(query)}`;
-        const html = yield postForm(`${origin}/arama/`, body, { referer, origin });
-        const parsed = parseAjaxSearchResults(html);
+        const html = yield fetchText(`${origin}/arama/${encodeURIComponent(query)}`);
+        const parsed = parseSearchResults(html, origin);
         totalResults += parsed.length;
         for (const r of parsed) {
           if (seenUrls.has(r.url))
@@ -1073,43 +1002,25 @@ function searchOnDomain(domain, targets) {
           candidates.push(r);
         }
       } catch (e) {
-        fetchErr = `ajax:${e.message}`;
+        fetchErr = `get:${e.message}`;
       }
-      try {
-        const html = yield fetchText(`${origin}/arama/${encodeURIComponent(query)}`);
-        const parsed = parseLegacySearchResults(html);
-        totalResults += parsed.length;
-        for (const r of parsed) {
-          if (seenUrls.has(r.url))
-            continue;
-          if (!titlesMatch(r.title, targets) && !titlesMatch(r.original, targets))
-            continue;
-          seenUrls.add(r.url);
-          const exact = targets.map(normalizeTitle).includes(normalizeTitle(r.title)) || targets.map(normalizeTitle).includes(normalizeTitle(r.original));
-          const yearMatch = false;
-          r.score = (exact ? 2 : 0) + (yearMatch ? 1 : 0);
-          candidates.push(r);
+      if (!candidates.length) {
+        try {
+          const html = yield fetchText(`${origin}/arama/?s=${encodeURIComponent(query)}`);
+          const parsed = parseSearchResults(html, origin);
+          totalResults += parsed.length;
+          for (const r of parsed) {
+            if (seenUrls.has(r.url))
+              continue;
+            if (!titlesMatch(r.title, targets) && !titlesMatch(r.original, targets))
+              continue;
+            seenUrls.add(r.url);
+            r.score = 1;
+            candidates.push(r);
+          }
+        } catch (e) {
+          fetchErr = fetchErr || `qs:${e.message}`;
         }
-      } catch (e) {
-        fetchErr = fetchErr || `get:${e.message}`;
-      }
-      try {
-        const html = yield fetchText(`${origin}/arama/?s=${encodeURIComponent(query)}`);
-        const parsed = [
-          ...parseLegacySearchResults(html),
-          ...parseAjaxSearchResults(html)
-        ];
-        totalResults += parsed.length;
-        for (const r of parsed) {
-          if (seenUrls.has(r.url))
-            continue;
-          if (!titlesMatch(r.title, targets) && !titlesMatch(r.original, targets))
-            continue;
-          seenUrls.add(r.url);
-          r.score = 1;
-          candidates.push(r);
-        }
-      } catch (e) {
       }
     }
     return { candidates, totalResults, fetchErr };
@@ -1168,14 +1079,14 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
           scxErr = `sayfa: ${e.message}`;
           continue;
         }
-        const parsed = parsePlayerEntries(pageHtml);
+        const parsed = parseScx(pageHtml);
         if (parsed.length) {
           match = candidate;
           entries = parsed;
           break;
         }
       }
-      steps.push(`player entries=${entries.length}${scxErr ? ` ${scxErr}` : ""}`);
+      steps.push(`scx entries=${entries.length}${scxErr ? ` ${scxErr}` : ""}`);
       if (!match || !entries.length) {
         return DEBUG ? debugStream(steps.join(" | ")) : [];
       }
