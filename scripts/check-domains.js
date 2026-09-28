@@ -19,9 +19,9 @@
  * (npm test, test:fullhdfilm, test:dizifilm) başarısız olur ve insan/LLM
  * müdahalesi gerekir.
  *
- * Cloudflare challenge'ı ("Just a moment...", `cf-mitigated: challenge`) ölü
- * sayılmaz: domain ayakta, yalnızca Node/curl'ün TLS parmak izi engelleniyor —
- * cihazdaki Nuvio'nun native ağ yığını genelde geçiyor (bkz. scripts/native-fetch/).
+ * Cloudflare challenge/engel sayfası (bkz. scripts/cf-detect.js) ölü sayılmaz:
+ * domain ayakta, yalnızca bu istemci (Node TLS parmak izi / CI datacenter IP'si)
+ * engelleniyor — cihazdaki Nuvio genelde geçiyor (bkz. scripts/native-fetch/).
  *
  * Çıkış kodu: bir provider'ın TÜM domain adayları ölüyse (bağlantı hatası
  * veya challenge dışı 4xx/5xx) 1, aksi halde 0.
@@ -29,6 +29,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { isCloudflareBlock } = require('./cf-detect');
 
 const SRC_DIR = path.join(__dirname, '..', 'src');
 const TIMEOUT_MS = 10000;
@@ -93,7 +94,7 @@ async function checkDomain(url) {
         });
         const finalUrl = response.url ? normalize(response.url) : normalize(url);
         const redirected = finalUrl !== normalize(url);
-        const cfChallenge = response.headers.get('cf-mitigated') === 'challenge';
+        const cfChallenge = await isCloudflareBlock(response);
         return { ok: response.ok || cfChallenge, cfChallenge, status: response.status, redirected, finalUrl };
     } catch (err) {
         return { ok: false, status: null, error: err.message };
@@ -130,7 +131,7 @@ async function main() {
             if (result.ok) {
                 anyOk = true;
                 healthyInOrder.push(result.finalUrl);
-                const cf = result.cfChallenge ? ' — Cloudflare challenge (ayakta; Node\'dan içerik doğrulanamaz)' : '';
+                const cf = result.cfChallenge ? ' — Cloudflare challenge/engel (ayakta; bu istemciden içerik doğrulanamaz)' : '';
                 if (result.redirected) {
                     const listed = domains.map(normalize).indexOf(result.finalUrl);
                     const note = listed === -1

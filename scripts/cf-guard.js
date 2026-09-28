@@ -11,13 +11,12 @@
  * koduyla biterse ve engel görülmüşse çıkış kodunu BLOCKED_EXIT_CODE (78) yap.
  * Workflow 78'i "CI'dan doğrulanamadı" (nötr) olarak raporlar, 1'i gerçek hata.
  *
- * Engel sayılanlar (yalnızca server: cloudflare yanıtlarında):
- *   - `cf-mitigated: challenge` header'ı ("Just a moment..." managed challenge)
- *   - 403/429/503 + gövdede Cloudflare engel sayfası işaretleri (WAF/IP bloğu)
+ * Engel tespiti: scripts/cf-detect.js.
  */
 
+const { isCloudflareBlock } = require('./cf-detect');
+
 const BLOCKED_EXIT_CODE = 78;
-const BLOCK_BODY_RE = /Just a moment\.\.\.|cf-chl-|Attention Required! \| Cloudflare|Sorry, you have been blocked|cf-error-details/i;
 
 const blockedHosts = new Set();
 
@@ -27,19 +26,7 @@ function hostOf(url) {
 }
 
 async function inspect(response, requestUrl) {
-    if (!/cloudflare/i.test(response.headers.get('server') || '')) return;
-    const host = hostOf(response.url || requestUrl);
-    if (response.headers.get('cf-mitigated') === 'challenge') {
-        blockedHosts.add(host);
-        return;
-    }
-    if (![403, 429, 503].includes(response.status)) return;
-    try {
-        const body = await response.clone().text();
-        if (BLOCK_BODY_RE.test(body)) blockedHosts.add(host);
-    } catch {
-        // gövde okunamadı; engel olarak işaretleme
-    }
+    if (await isCloudflareBlock(response)) blockedHosts.add(hostOf(response.url || requestUrl));
 }
 
 const originalFetch = globalThis.fetch;
