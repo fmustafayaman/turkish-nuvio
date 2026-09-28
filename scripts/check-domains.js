@@ -19,8 +19,12 @@
  * (npm test, test:fullhdfilm, test:dizifilm) başarısız olur ve insan/LLM
  * müdahalesi gerekir.
  *
+ * Cloudflare challenge'ı ("Just a moment...", `cf-mitigated: challenge`) ölü
+ * sayılmaz: domain ayakta, yalnızca Node/curl'ün TLS parmak izi engelleniyor —
+ * cihazdaki Nuvio'nun native ağ yığını genelde geçiyor (bkz. scripts/native-fetch/).
+ *
  * Çıkış kodu: bir provider'ın TÜM domain adayları ölüyse (bağlantı hatası
- * veya 4xx/5xx) 1, aksi halde 0.
+ * veya challenge dışı 4xx/5xx) 1, aksi halde 0.
  */
 
 const fs = require('fs');
@@ -89,7 +93,8 @@ async function checkDomain(url) {
         });
         const finalUrl = response.url ? normalize(response.url) : normalize(url);
         const redirected = finalUrl !== normalize(url);
-        return { ok: response.ok, status: response.status, redirected, finalUrl };
+        const cfChallenge = response.headers.get('cf-mitigated') === 'challenge';
+        return { ok: response.ok || cfChallenge, cfChallenge, status: response.status, redirected, finalUrl };
     } catch (err) {
         return { ok: false, status: null, error: err.message };
     } finally {
@@ -125,10 +130,17 @@ async function main() {
             if (result.ok) {
                 anyOk = true;
                 healthyInOrder.push(result.finalUrl);
+                const cf = result.cfChallenge ? ' — Cloudflare challenge (ayakta; Node\'dan içerik doğrulanamaz)' : '';
                 if (result.redirected) {
-                    console.log(`  ⚠️  ${domain} -> 301/302 -> ${result.finalUrl} (UYARI: constants.js'te bu domain artık birincil değil olabilir)`);
+                    const listed = domains.map(normalize).indexOf(result.finalUrl);
+                    const note = listed === -1
+                        ? 'UYARI: hedef domain DOMAIN_CANDIDATES\'ta yok, eklenmeli'
+                        : (listed < domains.map(normalize).indexOf(normalize(domain))
+                            ? 'hedef zaten listede daha önde'
+                            : 'UYARI: hedef domain listede daha geride, öne alınmalı');
+                    console.log(`  ↪️  ${domain} -> ${result.finalUrl} (${note})${cf}`);
                 } else {
-                    console.log(`  ✅ ${domain} (${result.status})`);
+                    console.log(`  ${result.cfChallenge ? '🛡️ ' : '✅'} ${domain} (${result.status})${cf}`);
                 }
             } else {
                 console.log(`  ❌ ${domain} — ${result.error || `HTTP ${result.status}`}`);

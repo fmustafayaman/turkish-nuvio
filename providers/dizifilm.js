@@ -1,6 +1,6 @@
 /**
  * dizifilm - Built from src/dizifilm/
- * Generated: 2026-07-21T21:21:30.833Z
+ * Generated: 2026-09-28T17:37:08.534Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -184,7 +184,7 @@ function fetchJson(_0) {
 }
 function getTmdbInfo(tmdbId, mediaType) {
   return __async(this, null, function* () {
-    const empty = { title: "", originalTitle: "", turkishTitle: "", year: "", imdbId: null };
+    const empty = { title: "", originalTitle: "", turkishTitle: "", year: "", imdbId: null, posterPath: "" };
     const apiKey = getTmdbApiKey();
     if (!apiKey)
       return empty;
@@ -207,7 +207,10 @@ function getTmdbInfo(tmdbId, mediaType) {
             originalTitle: data.original_title || data.original_name || "",
             turkishTitle,
             year: ((_d = data.release_date) == null ? void 0 : _d.slice(0, 4)) || ((_e = data.first_air_date) == null ? void 0 : _e.slice(0, 4)) || "",
-            imdbId: ((_f = data.external_ids) == null ? void 0 : _f.imdb_id) || data.imdb_id || null
+            imdbId: ((_f = data.external_ids) == null ? void 0 : _f.imdb_id) || data.imdb_id || null,
+            // "/abc.jpg" — TMDB görsellerini aynen kullanan siteler (dizibal)
+            // için başlıktan bağımsız, kesin eşleştirme sinyali.
+            posterPath: data.poster_path || ""
           };
         } catch (e) {
           return empty;
@@ -1422,7 +1425,7 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
   return __async(this, null, function* () {
     const steps = [];
     try {
-      console.log(`[Dizifilm v1.7.0] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
+      console.log(`[Dizifilm v1.7.2] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
       const resolved = yield resolveTarget(tmdbId, mediaType, season, episode, steps);
       if (!resolved)
         return DEBUG ? debugStream(steps.join(" | ")) : [];

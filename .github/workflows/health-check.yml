@@ -57,36 +57,80 @@ jobs:
         if: steps.fix_diff.outputs.changed == 'true'
         run: npm run build
 
+      # Test adımları scripts/cf-guard.js ile çalışır: GitHub runner IP'leri
+      # Cloudflare arkasındaki sitelerde (animecix, dizifilm, fullhdfilm) sık sık
+      # challenge/engel yiyor — provider cihazda çalışırken CI "bozuk" diyordu.
+      # Test başarısız olur VE Cloudflare engeli görülmüşse çıkış kodu 78 olur;
+      # bu "CI'dan doğrulanamadı" (nötr) sayılır, issue açmaz. Diğer hatalar
+      # (çıkış 1) gerçek bozulmadır.
       - name: Animecix testi
         id: test_animecix
         continue-on-error: true
+        env:
+          NODE_OPTIONS: --require ./scripts/cf-guard.js
         run: |
           set -o pipefail
-          npm test 2>&1 | tee test-animecix.log
+          set +e
+          node test_animecix.js 2>&1 | tee test-animecix.log
+          code=$?
+          if [ "$code" = 78 ]; then echo "blocked=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          exit $code
 
       - name: FullHDFilm testi
         id: test_fullhdfilm
         continue-on-error: true
+        env:
+          NODE_OPTIONS: --require ./scripts/cf-guard.js
         run: |
           set -o pipefail
-          npm run test:fullhdfilm 2>&1 | tee test-fullhdfilm.log
+          set +e
+          node test_fullhdfilm.js 2>&1 | tee test-fullhdfilm.log
+          code=$?
+          if [ "$code" = 78 ]; then echo "blocked=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          exit $code
 
       - name: Dizifilm testi
         id: test_dizifilm
         continue-on-error: true
+        env:
+          NODE_OPTIONS: --require ./scripts/cf-guard.js
         run: |
           set -o pipefail
-          npm run test:dizifilm 2>&1 | tee test-dizifilm.log
+          set +e
+          node test_dizifilm.js 2>&1 | tee test-dizifilm.log
+          code=$?
+          if [ "$code" = 78 ]; then echo "blocked=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          exit $code
+
+      - name: Dizibal testi
+        id: test_dizibal
+        continue-on-error: true
+        env:
+          NODE_OPTIONS: --require ./scripts/cf-guard.js
+        run: |
+          set -o pipefail
+          set +e
+          node test_dizibal.js 2>&1 | tee test-dizibal.log
+          code=$?
+          if [ "$code" = 78 ]; then echo "blocked=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          exit $code
 
       # Sözleşme (CLAUDE.md) doğrulaması: yukarıdaki testler "en az 1 stream
       # var mı" bakar, bu ise dönen stream objelerinin gerçek şeklini
-      # (url/type/quality/headers/provider) doğrular.
+      # (url/type/quality/headers/provider) doğrular. CF engelli provider'ları
+      # tek tek atlar (diğerlerinin gerçek hatasını maskelemez).
       - name: Stream şeması kontrolü
         id: schema
         continue-on-error: true
+        env:
+          NODE_OPTIONS: --require ./scripts/cf-guard.js
         run: |
           set -o pipefail
-          npm run check:schema 2>&1 | tee schema.log
+          set +e
+          node scripts/check-stream-schema.js 2>&1 | tee schema.log
+          code=$?
+          if [ "$code" = 78 ]; then echo "blocked=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          exit $code
 
       # Domain otomatik düzeltildiyse VE tüm testler hâlâ geçiyorsa
       # (yani sadece domain değişmiş, scraping mantığı bozulmamış):
@@ -99,6 +143,7 @@ jobs:
           steps.test_animecix.outcome != 'failure' &&
           steps.test_fullhdfilm.outcome != 'failure' &&
           steps.test_dizifilm.outcome != 'failure' &&
+          steps.test_dizibal.outcome != 'failure' &&
           steps.schema.outcome != 'failure'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -131,7 +176,13 @@ jobs:
           ANIMECIX_OUTCOME: ${{ steps.test_animecix.outcome }}
           FULLHDFILM_OUTCOME: ${{ steps.test_fullhdfilm.outcome }}
           DIZIFILM_OUTCOME: ${{ steps.test_dizifilm.outcome }}
+          DIZIBAL_OUTCOME: ${{ steps.test_dizibal.outcome }}
           SCHEMA_OUTCOME: ${{ steps.schema.outcome }}
+          ANIMECIX_BLOCKED: ${{ steps.test_animecix.outputs.blocked }}
+          FULLHDFILM_BLOCKED: ${{ steps.test_fullhdfilm.outputs.blocked }}
+          DIZIFILM_BLOCKED: ${{ steps.test_dizifilm.outputs.blocked }}
+          DIZIBAL_BLOCKED: ${{ steps.test_dizibal.outputs.blocked }}
+          SCHEMA_BLOCKED: ${{ steps.schema.outputs.blocked }}
           FIX_CHANGED: ${{ steps.fix_diff.outputs.changed }}
           AUTO_PR_OUTCOME: ${{ steps.auto_pr.outcome }}
         with:
@@ -142,13 +193,26 @@ jobs:
 
             const checks = [
               { name: 'Domain sağlık kontrolü', outcome: process.env.DOMAINS_OUTCOME, log: 'domains.log' },
-              { name: 'Animecix testi', outcome: process.env.ANIMECIX_OUTCOME, log: 'test-animecix.log' },
-              { name: 'FullHDFilm testi', outcome: process.env.FULLHDFILM_OUTCOME, log: 'test-fullhdfilm.log' },
-              { name: 'Dizifilm testi', outcome: process.env.DIZIFILM_OUTCOME, log: 'test-dizifilm.log' },
-              { name: 'Stream şeması kontrolü', outcome: process.env.SCHEMA_OUTCOME, log: 'schema.log' },
+              { name: 'Animecix testi', outcome: process.env.ANIMECIX_OUTCOME, blocked: process.env.ANIMECIX_BLOCKED, log: 'test-animecix.log' },
+              { name: 'FullHDFilm testi', outcome: process.env.FULLHDFILM_OUTCOME, blocked: process.env.FULLHDFILM_BLOCKED, log: 'test-fullhdfilm.log' },
+              { name: 'Dizifilm testi', outcome: process.env.DIZIFILM_OUTCOME, blocked: process.env.DIZIFILM_BLOCKED, log: 'test-dizifilm.log' },
+              { name: 'Dizibal testi', outcome: process.env.DIZIBAL_OUTCOME, blocked: process.env.DIZIBAL_BLOCKED, log: 'test-dizibal.log' },
+              { name: 'Stream şeması kontrolü', outcome: process.env.SCHEMA_OUTCOME, blocked: process.env.SCHEMA_BLOCKED, log: 'schema.log' },
             ];
 
             const failed = checks.filter(c => c.outcome === 'failure');
+            const blocked = checks.filter(c => c.outcome !== 'failure' && c.blocked === 'true');
+            const blockedNote = blocked.length
+              ? `🛡️ Cloudflare engeli nedeniyle CI'dan doğrulanamayan: ${blocked.map(c => c.name).join(', ')} (cihazda/yerelde doğrulanmalı; bkz. scripts/cf-guard.js, scripts/native-fetch/).`
+              : '';
+
+            await core.summary
+              .addHeading('Provider health check')
+              .addTable([
+                [{ data: 'Kontrol', header: true }, { data: 'Sonuç', header: true }],
+                ...checks.map(c => [c.name, c.outcome === 'failure' ? '❌ başarısız' : (c.blocked === 'true' ? '🛡️ CF engeli (doğrulanamadı)' : '✅ geçti')]),
+              ])
+              .write();
             const fixAttempted = process.env.FIX_CHANGED === 'true';
             const autoFixOpened = fixAttempted && process.env.AUTO_PR_OUTCOME === 'success';
             const fixAttemptedButStillFailing = fixAttempted && !autoFixOpened;
@@ -174,7 +238,7 @@ jobs:
             const existing = openIssues[0];
 
             if (failed.length === 0) {
-              console.log('Tüm kontroller geçti.');
+              console.log(blockedNote ? `Başarısız kontrol yok. ${blockedNote}` : 'Tüm kontroller geçti.');
               if (existing) {
                 const note = autoFixOpened
                   ? ` (domain rotasyonu otomatik düzeltildi, bkz. açılan PR)`
@@ -183,7 +247,7 @@ jobs:
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   issue_number: existing.number,
-                  body: `✅ Bu run'da tüm kontroller geçti${note} (run: ${context.runId}). Issue kapatılıyor.`,
+                  body: `✅ Bu run'da başarısız kontrol yok${note} (run: ${context.runId}). Issue kapatılıyor.${blockedNote ? `\n\n${blockedNote}` : ''}`,
                 });
                 await github.rest.issues.update({
                   owner: context.repo.owner,
@@ -200,6 +264,8 @@ jobs:
               ``,
               `**Çalıştırma:** ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
               fixAttemptedButStillFailing ? `\nNot: Domain rotasyonu otomatik düzeltilmeye çalışıldı ama testler hâlâ başarısız — otomatik PR açılmadı, aşağıdaki hatalar muhtemelen site yapısı (HTML/API) değişikliğinden kaynaklanıyor ve elle/LLM ile bakılması gerekiyor.` : '',
+              ``,
+              blockedNote,
               ``,
               ...failed.map(c => {
                 let log = '';

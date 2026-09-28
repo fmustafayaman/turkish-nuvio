@@ -198,7 +198,7 @@ async function resolveTarget(tmdbId, mediaType, season, episode, steps) {
 async function getStreams(tmdbId, mediaType = 'movie', season = 1, episode = 1) {
     const steps = [];
     try {
-        console.log(`[Dizifilm v1.7.0] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
+        console.log(`[Dizifilm v1.7.2] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
         const resolved = await resolveTarget(tmdbId, mediaType, season, episode, steps);
         if (!resolved) return DEBUG ? debugStream(steps.join(' | ')) : [];
         const mediaTitle = resolved.mediaTitle;

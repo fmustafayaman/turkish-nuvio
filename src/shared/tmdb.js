@@ -59,7 +59,7 @@ export async function fetchJson(url, options = {}) {
 }
 
 export async function getTmdbInfo(tmdbId, mediaType) {
-    const empty = { title: '', originalTitle: '', turkishTitle: '', year: '', imdbId: null };
+    const empty = { title: '', originalTitle: '', turkishTitle: '', year: '', imdbId: null, posterPath: '' };
     const apiKey = getTmdbApiKey();
     if (!apiKey) return empty;
 
@@ -83,7 +83,10 @@ export async function getTmdbInfo(tmdbId, mediaType) {
                     originalTitle: data.original_title || data.original_name || '',
                     turkishTitle,
                     year: data.release_date?.slice(0, 4) || data.first_air_date?.slice(0, 4) || '',
-                    imdbId: data.external_ids?.imdb_id || data.imdb_id || null
+                    imdbId: data.external_ids?.imdb_id || data.imdb_id || null,
+                    // "/abc.jpg" — TMDB görsellerini aynen kullanan siteler (dizibal)
+                    // için başlıktan bağımsız, kesin eşleştirme sinyali.
+                    posterPath: data.poster_path || ''
                 };
             } catch {
                 return empty;

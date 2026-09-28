@@ -1,19 +1,22 @@
 /**
- * FullHDFilmizlesene provider test scripti (.mx)
+ * FullHDFilmizlesene provider test scripti (.now)
  *
  * Usage:
- *   npm run build && node test_fullhdfilm.js
- *   node test_fullhdfilm.js <tmdbId> movie
+ *   npm run build && NATIVE_FETCH=1 node test_fullhdfilm.js
+ *   NATIVE_FETCH=1 node test_fullhdfilm.js <tmdbId> movie
  *
- * Varsayılan: Hayvan Yarışı / Corrida dos Bichos (sitede güncel örnek).
- * Not: .mx Cloudflare arkasında olabilir; bu ortamda 0 stream CF engeli demektir.
- * Nuvio cihaz/ağında farklı davranabilir.
+ * Varsayılan: Yıldızlararası / Interstellar (TMDB 157336).
+ *
+ * Not: .now Cloudflare arkasında ve Node'un TLS parmak izine "Just a moment..."
+ * challenge'ı döndürüyor; cihazdaki Nuvio (native ağ yığını) ise geçiyor. Bu
+ * yüzden yerelde NATIVE_FETCH=1 ile çalıştır (macOS: fetch → URLSession, bkz.
+ * scripts/native-fetch/). NATIVE_FETCH olmadan 0 stream = CF engeli, bozukluk değil.
  */
 
+require('./scripts/native-fetch/shim.js');
 const { getStreams } = require('./providers/fullhdfilm.js');
 
-// Varsayılan: Hayvan Yarışı / Corrida dos Bichos (TMDB 1263532) — .mx katalogunda mevcut.
-const TMDB_ID = parseInt(process.argv[2] || '1263532', 10);
+const TMDB_ID = parseInt(process.argv[2] || '157336', 10);
 const MEDIA_TYPE = process.argv[3] || 'movie';
 
 async function main() {

@@ -1,13 +1,9 @@
 import { getTmdbInfo, tmdbApiKeySettingsLayout } from '../shared/tmdb.js';
 import { withTimeout, timeoutSignal, DEFAULT_TIMEOUT_MS } from '../shared/http.js';
-import { maybeEmbedSubsUrl, detectHlsQuality, embedSubsSettingsLayout } from '../shared/hls.js';
-import { DOMAIN_CANDIDATES } from './constants.js';
+import { buildMpvEdlUrl, ensureHlsExtHint, detectHlsQuality, embedSubsSettingsLayout } from '../shared/hls.js';
+import { DOMAIN_CANDIDATES, SITE_HEADERS } from './constants.js';
 
-const HEADERS = {
-    'User-Agent': 'Mozilla/5.0',
-    'Accept': 'application/json,text/plain,*/*',
-    'Accept-Language': 'tr-TR,tr;q=0.9,en;q=0.8'
-};
+const VERSION = '1.4.0';
 
 const TR_ASCII_MAP = {
     'ç': 'c', 'Ç': 'c', 'ğ': 'g', 'Ğ': 'g', 'ı': 'i', 'İ': 'i',
@@ -27,36 +23,12 @@ function normalizeTitle(value) {
         .replace(/[^a-z0-9]/g, '');
 }
 
-async function fetchJson(domain, path) {
+async function fetchText(url, referer, accept) {
     return await withTimeout((async () => {
-        const response = await fetch(`${domain}${path}`, {
-            headers: { ...HEADERS, 'Referer': `${domain}/` },
-            signal: timeoutSignal(DEFAULT_TIMEOUT_MS)
-        });
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status} on ${path}`);
-        }
-        return await response.json();
-    })(), DEFAULT_TIMEOUT_MS, path);
-}
-
-// Hermes'te URL sınıfı yok; origin'i (scheme://host) elle çıkarıyoruz.
-function originOf(url) {
-    const match = String(url || '').match(/^(https?:\/\/[^/]+)/i);
-    return match ? match[1] : '';
-}
-
-async function fetchText(url, referer) {
-    return await withTimeout((async () => {
-        const response = await fetch(url, {
-            headers: {
-                'User-Agent': HEADERS['User-Agent'],
-                'Accept': '*/*',
-                'Accept-Language': HEADERS['Accept-Language'],
-                'Referer': referer
-            },
-            signal: timeoutSignal(DEFAULT_TIMEOUT_MS)
-        });
+        const headers = { ...SITE_HEADERS };
+        if (accept) headers['Accept'] = accept;
+        if (referer) headers['Referer'] = referer;
+        const response = await fetch(url, { headers, signal: timeoutSignal(DEFAULT_TIMEOUT_MS) });
         if (!response.ok) {
             throw new Error(`HTTP ${response.status} on ${url}`);
         }
@@ -64,187 +36,182 @@ async function fetchText(url, referer) {
     })(), DEFAULT_TIMEOUT_MS, url);
 }
 
-async function fetchJsonAt(url, referer, origin) {
-    return await withTimeout((async () => {
-        const headers = {
-            'User-Agent': HEADERS['User-Agent'],
-            'Accept': '*/*',
-            'Referer': referer
-        };
-        if (origin) headers['Origin'] = origin;
-        const response = await fetch(url, { headers, signal: timeoutSignal(DEFAULT_TIMEOUT_MS) });
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status} on ${url}`);
-        }
-        return await response.json();
-    })(), DEFAULT_TIMEOUT_MS, url);
+// "/ara/oneri?q=" → { movies: [{type,title,url,poster,meta}], series: [...] }.
+// Anime'ler de "series" altında gelir (url'leri /anime/<slug>).
+async function suggest(domain, query) {
+    const text = await fetchText(
+        `${domain}/ara/oneri?q=${encodeURIComponent(query)}`,
+        `${domain}/`,
+        'application/json'
+    );
+    return JSON.parse(text);
 }
 
-// Embed HTML'inden playerjs subtitle listesini çıkarır: "[Dil]url,[Dil]url"
-function parseEmbedSubtitles(html) {
-    const match = html.match(/["']subtitle["']\s*:\s*"([^"]*)"/i);
-    if (!match || !match[1]) return [];
-    return match[1].split(',').map(part => {
-        const m = part.match(/^\s*\[([^\]]*)\]\s*(\S+)\s*$/);
-        if (!m) return null;
-        const label = m[1].trim();
-        const url = m[2].trim();
-        const key = normalizeTitle(label); // Türkçe karakterleri ASCII'ye indirger
-        const lang = /turk|tr/.test(key) ? 'tr' : (/ing|eng|^en/.test(key) ? 'en' : (key || 'und'));
-        return { url, label, lang };
-    }).filter(Boolean);
+function metaYear(meta) {
+    const match = String(meta || '').match(/(\d{4})/);
+    return match ? match[1] : '';
 }
 
-function apiPath(path, params = {}) {
-    const query = Object.keys(params)
-        .filter(key => params[key] !== undefined && params[key] !== null && params[key] !== '')
-        .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(params[key])}`)
-        .join('&');
-    return `${path}${query ? `?${query}` : ''}`;
+// Site TMDB görsellerini aynı dosya adıyla sunuyor: ".../posters/w780/<ad>.webp".
+function posterKey(value) {
+    const name = String(value || '').split('/').pop() || '';
+    return name.replace(/\.[a-z0-9]+$/i, '');
 }
 
-function itemTitle(item, type) {
-    if (!item) return '';
-    if (type === 'tv') {
-        return item.name_tr || item.name || item.name_en || item.original_name || '';
+// Eşleşme puanı; null = bu içerik kesinlikle hedef değil.
+// Poster eşleşmesi başlıktan bağımsız kesin kanıt. Poster yoksa tam başlık
+// eşleşmesi şart ve yıl biliniyorsa tutmalı (aynı adlı farklı yapımlara
+// düşmemek için — ör. "One Day" 2011 film vs 2024 dizi).
+function scoreItem(item, targets, year, posterPath) {
+    const posterMatch = !!posterPath && posterKey(item.poster) === posterKey(posterPath);
+    if (posterMatch) return 100;
+
+    const title = normalizeTitle(item.title);
+    if (!title || !targets.includes(title)) return null;
+
+    const itemYear = metaYear(item.meta);
+    if (year && itemYear) {
+        const diff = Math.abs(Number(itemYear) - Number(year));
+        if (diff > 1) return null;
+        return diff === 0 ? 20 : 15;
     }
-    return item.title_tr || item.title || item.title_en || item.original_title || '';
+    return 10;
 }
 
-function itemYear(item, type) {
-    const date = type === 'tv' ? item.first_air_date : item.release_date;
-    return String(date || '').slice(0, 4);
-}
+async function searchContent(type, titles, year, posterPath) {
+    const group = type === 'tv' ? 'series' : 'movies';
+    const targets = titles.map(normalizeTitle).filter(Boolean);
 
-function scoreItem(item, tmdbId, targets, year, type) {
-    const idMatch = String(item.id || '') === String(tmdbId);
-    const title = normalizeTitle(itemTitle(item, type));
-    const exactTitle = targets.map(normalizeTitle).filter(Boolean).includes(title);
-    const yearMatch = year && itemYear(item, type) === String(year);
-    return (idMatch ? 10 : 0) + (exactTitle ? 3 : 0) + (yearMatch ? 1 : 0);
-}
-
-async function searchContent(tmdbId, type, targets, year) {
-    const endpoint = type === 'tv' ? '/api/series' : '/api/movies';
-
-    // DOMAIN_CANDIDATES sırayla denenir; ilk sonuç veren domain'de kalınır
-    // (fullhdfilm/dizifilm ile aynı desen — site domain'i değişirse diğer
-    // adaylara düşer).
     for (const domain of DOMAIN_CANDIDATES) {
-        const seen = new Set();
-        const candidates = [];
-
-        for (const query of targets) {
+        const byUrl = new Map();
+        let reachable = false;
+        for (const query of titles) {
             let data;
             try {
-                data = await fetchJson(domain, apiPath(endpoint, {
-                    search: query,
-                    lang: 'tr',
-                    siteMode: 'full'
-                }));
+                data = await suggest(domain, query);
+                reachable = true;
             } catch {
                 continue;
             }
-
-            for (const item of data.data || []) {
-                if (!item || !item._id || seen.has(item._id)) continue;
-                seen.add(item._id);
-
-                // Aynı başlığın farklı yapımlarını ayır (ör. One Piece anime 1999 vs
-                // Netflix canlı-aksiyon 2023). TMDB id birebir eşleşmiyorsa ve yıllar
-                // 1'den fazla farklıysa bu FARKLI bir yapımdır — yanlış içeriğe
-                // fallback etmemek için ele.
-                const idMatch = String(item.id || '') === String(tmdbId);
-                const iy = itemYear(item, type);
-                if (!idMatch && year && iy && Math.abs(Number(iy) - Number(year)) > 1) continue;
-
-                const score = scoreItem(item, tmdbId, targets, year, type);
-                if (score <= 0) continue;
-                candidates.push({ item, score });
+            for (const item of (data && data[group]) || []) {
+                if (!item || !item.url || byUrl.has(item.url)) continue;
+                const score = scoreItem(item, targets, year, posterPath);
+                if (score !== null) byUrl.set(item.url, { item, score });
             }
+            // Kesin (poster) eşleşme bulunduysa diğer başlıkları aramaya gerek yok.
+            if ([...byUrl.values()].some(c => c.score >= 100)) break;
         }
+        if (!reachable) continue;
 
-        if (candidates.length) {
-            candidates.sort((a, b) => b.score - a.score);
-            return { domain, items: candidates.map(candidate => candidate.item) };
-        }
+        const items = [...byUrl.values()]
+            .sort((a, b) => b.score - a.score)
+            .map(c => c.item);
+        return { domain, items };
     }
-
     return { domain: null, items: [] };
 }
 
-async function fetchStreamConfig(domain, item, type, season, episode) {
-    if (type === 'tv') {
-        const seasonNo = season || 1;
-        const episodeNo = episode || 1;
-        const data = await fetchJson(domain, apiPath(
-            `/api/series/${item._id}/seasons/${seasonNo}/episodes/${episodeNo}/stream`,
-            { lang: 'tr', siteMode: 'full' }
-        ));
-        return data.data || null;
-    }
-
-    const data = await fetchJson(domain, apiPath(`/api/movies/${item._id}/stream`, {
-        lang: 'tr',
-        siteMode: 'full'
-    }));
-    return data.data || null;
+function pageUrlFor(item, type, season, episode) {
+    const base = String(item.url).replace(/\/+$/, '');
+    return type === 'tv' ? `${base}/season/${season || 1}/episode/${episode || 1}` : base;
 }
 
-// Dizibal artık m3u8'i kendi API'sinde çözmüyor; stream config harici bir
-// PlayerJS embed host'una (ör. x.ag2m4.cfd) ait streamUrl veriyor. Gerçek m3u8
-// o embed sayfasındaki `/dl?op=get_stream&view_id=...&hash=...` çağrısıyla,
-// host origin'i Origin header'ı olarak gönderilerek alınır.
-async function fetchM3u8(domain, config) {
-    const embedUrl = config && config.streamUrl;
-    if (!embedUrl) return null;
+// İçerik sayfasında player, HTML'e yalnızca opak bir slug + loader script'i
+// olarak gömülü: <div data-pv="SLUG"> + <script src="https://HOST/assets/js/core.js">.
+// core.js bunu HOST/assets/js/s.php?s=SLUG iframe'ine çeviriyor.
+function parsePlayerEmbed(html) {
+    if (/data-player-type="none"/i.test(html)) return null;
+    const slug = (html.match(/data-pv="([^"]+)"/i) || [])[1];
+    const loader = (html.match(/<script[^>]+src="(https?:\/\/[^"]+?)\/(?:assets\/js\/core|e\/c)\.js[^"]*"/i) || [])[1];
+    if (!slug || !loader) return null;
+    return { slug, host: loader.replace(/\/+$/, '') };
+}
 
-    const origin = originOf(embedUrl);
-    let html;
+// s.php sayfası (origin kilitli: Referer dizibal olmalı) oynatıcı config'ini
+// window.__PLAYER__ = {...} olarak içeriyor: tokenlı HLS master, altyazılar, ses izleri.
+function parsePlayerConfig(html) {
+    const match = html.match(/window\.__PLAYER__\s*=\s*(\{[\s\S]*?\})\s*;?\s*<\/script>/);
+    if (!match) return null;
     try {
-        html = await fetchText(embedUrl, `${domain}/`);
+        const config = JSON.parse(match[1]);
+        return config && config.stream ? config : null;
     } catch {
         return null;
     }
+}
 
-    const streamParams = (html.match(/op=get_stream&view_id=\d+&hash=[0-9a-f-]+/i) || [])[0];
-    if (!streamParams) return null;
+async function fetchPlayer(domain, pageUrl) {
+    const html = await fetchText(pageUrl, `${domain}/`);
+    const embed = parsePlayerEmbed(html);
+    if (!embed) return null;
 
-    let data;
+    const playerUrl = `${embed.host}/assets/js/s.php?s=${encodeURIComponent(embed.slug)}`;
+    const playerHtml = await fetchText(playerUrl, `${domain}/`);
+    const config = parsePlayerConfig(playerHtml);
+    if (!config) return null;
+    return { config, host: embed.host };
+}
+
+function streamHeaders(host) {
+    return {
+        'User-Agent': SITE_HEADERS['User-Agent'],
+        'Referer': `${host}/`,
+        'Origin': host
+    };
+}
+
+function normalizeSubtitles(subs, host) {
+    return (subs || []).map(sub => {
+        if (!sub || !sub.src) return null;
+        const lang = String(sub.lang || '').toLowerCase() || 'und';
+        const label = sub.label || lang.toUpperCase();
+        return {
+            url: sub.src,
+            lang,
+            language: lang,
+            label,
+            name: label,
+            format: 'vtt',
+            headers: streamHeaders(host)
+        };
+    }).filter(Boolean)
+        // Türkçe altyazı önce.
+        .sort((a, b) => (a.lang === 'tr' ? 0 : 1) - (b.lang === 'tr' ? 0 : 1));
+}
+
+// "Türkçe Dublaj · Orijinal (EN)" gibi kısa ses izi özeti (başlıkta gösterilir).
+// Site orijinal sesi "Orijinal 2" gibi sıra numarasıyla etiketliyor; dili yazıyoruz.
+function audioSummary(audios) {
+    const labels = (audios || []).filter(a => a && a.label).map(a => {
+        if (!/^orijinal/i.test(a.label)) return a.label;
+        const lang = String(a.lang || '').toUpperCase();
+        return lang && lang !== 'TR' ? `Orijinal (${lang})` : 'Orijinal';
+    });
+    return labels.join(' · ');
+}
+
+// Tek varyantlı (RESOLUTION'suz) playlist'lerde kalite sürüm adından gelir:
+// "Game.of.Thrones.S01E01.1080p.WebDL..." → "1080p".
+function qualityFromRelease(name) {
+    const match = String(name || '').match(/(2160|1440|1080|720|480)p/i);
+    if (!match) return null;
+    return match[1] === '2160' ? '4K' : `${match[1]}p`;
+}
+
+// Master'ın ayrı AUDIO rendition'ları (TR dublaj + orijinal) ve doğru HLS mime'ı
+// var; ffmpeg 7.0 (Desktop) mime'dan tanıyor, bu yüzden memory:// dönüşümüne
+// gerek yok. Masaüstü modu açıksa yalnızca altyazılar edl:// ile birleştirilir.
+function playbackUrl(url, subtitles) {
+    let desktop = false;
     try {
-        data = await fetchJsonAt(`${origin}/dl?${streamParams}`, embedUrl, origin);
+        const s = typeof globalThis !== 'undefined' ? globalThis.SCRAPER_SETTINGS : null;
+        desktop = !!(s && s.embedSubs);
     } catch {
-        return null;
+        desktop = false;
     }
-    if (!data || !data.url) return null;
-
-    return {
-        url: data.url,
-        embedOrigin: origin,
-        subtitles: parseEmbedSubtitles(html)
-    };
-}
-
-function streamHeaders(referer) {
-    return {
-        'User-Agent': HEADERS['User-Agent'],
-        'Referer': referer
-    };
-}
-
-function normalizeSubtitle(sub, referer) {
-    if (!sub || !sub.url) return null;
-    const lang = sub.lang || (/turk|türk|tr/i.test(sub.label || sub.url) ? 'tr' : 'en');
-    const label = sub.label || lang.toUpperCase();
-    return {
-        url: sub.url,
-        lang,
-        language: lang,
-        label,
-        name: label,
-        format: /\.srt(\?|$)/i.test(sub.url) ? 'srt' : 'vtt',
-        headers: streamHeaders(referer)
-    };
+    const hinted = ensureHlsExtHint(url);
+    if (!desktop) return hinted;
+    return buildMpvEdlUrl(hinted, subtitles) || hinted;
 }
 
 // Geçici teşhis: Nuvio'da log görünmediği için, akışın hangi aşamada
@@ -266,77 +233,69 @@ function debugStream(msg) {
 // `steps` verilirse (yalnızca getStreams'in DEBUG modu) her aşamayı teşhis için biriktirir.
 async function resolveTarget(tmdbId, mediaType, season, episode, steps) {
     const type = normalizeMediaType(mediaType);
-    const { title, originalTitle, turkishTitle, year } = await getTmdbInfo(tmdbId, type);
-    const targets = [...new Set([turkishTitle, title, originalTitle].filter(Boolean))];
-    steps?.push(`tmdb t="${title}" tr="${turkishTitle}" o="${originalTitle}"`);
-    if (!targets.length) return null;
+    const { title, originalTitle, turkishTitle, year, posterPath } = await getTmdbInfo(tmdbId, type);
+    const titles = [...new Set([turkishTitle, title, originalTitle].filter(Boolean))];
+    steps?.push(`tmdb t="${title}" tr="${turkishTitle}" o="${originalTitle}" y=${year}`);
+    if (!titles.length) return null;
 
-    const { domain, items } = await searchContent(tmdbId, type, targets, year);
+    const { domain, items } = await searchContent(type, titles, year, posterPath);
     steps?.push(`arama domain=${domain || 'yok'} aday=${items.length}`);
     if (!domain) return null;
 
-    for (const item of items.slice(0, 5)) {
+    for (const item of items.slice(0, 3)) {
+        const pageUrl = pageUrlFor(item, type, season, episode);
         try {
-            const config = await fetchStreamConfig(domain, item, type, season, episode);
-            if (!config || !config.src) continue;
-
+            const player = await fetchPlayer(domain, pageUrl);
+            if (!player) {
+                steps?.push(`player yok: ${pageUrl}`);
+                continue;
+            }
+            const name = item.title || title;
             const mediaTitle = type === 'tv'
-                ? `${itemTitle(item, type) || title} S${season || 1}E${episode || 1}`
-                : `${itemTitle(item, type) || title}${year ? ` (${year})` : ''}`;
-
-            return { item, config, mediaTitle, domain };
-        } catch {
-            // Try the next candidate.
+                ? `${name} S${season || 1}E${episode || 1}`
+                : `${name}${year ? ` (${year})` : ''}`;
+            return { ...player, mediaTitle };
+        } catch (e) {
+            steps?.push(`hata ${pageUrl}: ${e.message}`);
         }
     }
-
-    steps?.push('hiçbir aday geçerli stream config vermedi');
     return null;
 }
 
 async function getStreams(tmdbId, mediaType = 'movie', season = 1, episode = 1) {
     const steps = [];
     try {
-        console.log(`[Dizibal v1.3.0] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
+        console.log(`[Dizibal v${VERSION}] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
         const resolved = await resolveTarget(tmdbId, mediaType, season, episode, steps);
         if (!resolved) return DEBUG ? debugStream(steps.join(' | ')) : [];
 
-        const extracted = await fetchM3u8(resolved.domain, resolved.config);
-        if (!extracted || !extracted.url) {
-            steps.push('fetchM3u8 boş döndü');
+        const { config, host, mediaTitle } = resolved;
+        const headers = streamHeaders(host);
+        const subtitles = normalizeSubtitles(config.subs, host);
+
+        // Master'ı bir kez çek: hem erişilebilirliği doğrular hem kalite etiketini verir.
+        let masterText = '';
+        try {
+            masterText = await fetchText(config.stream, `${host}/`, '*/*');
+        } catch (e) {
+            steps.push(`master alınamadı: ${e.message}`);
             return DEBUG ? debugStream(steps.join(' | ')) : [];
         }
-
-        // m3u8 CDN'i embed host'unun Referer'ını ister; origin seviyesi yeterli.
-        const referer = extracted.embedOrigin ? `${extracted.embedOrigin}/` : `${resolved.domain}/`;
-        const subtitles = extracted.subtitles
-            .map(sub => normalizeSubtitle(sub, referer))
-            .filter(Boolean);
-
-        // Master'ı bir kez çek: kalite etiketi + masaüstü modu dönüşümü için.
-        let masterText = null;
-        try {
-            masterText = await fetchText(extracted.url, referer);
-        } catch {
-            masterText = null;
+        if (!/#EXTM3U/.test(masterText)) {
+            steps.push('master HLS değil');
+            return DEBUG ? debugStream(steps.join(' | ')) : [];
         }
-        const quality = detectHlsQuality(masterText || '') || 'Auto';
-
-        // Masaüstü modu (ayar açıksa): dizibal URL'i .m3u8 olduğu için edl ile
-        // video + altyazı birleşir. maybeEmbedSubsUrl kapalıyken url'yi korur.
-        const streamUrl = maybeEmbedSubsUrl(extracted.url, subtitles, masterText);
-        if (streamUrl !== extracted.url) {
-            console.log(`[Dizibal v1.2.5] masaüstü modu: stream dönüştürüldü (${subtitles.length} altyazı)`);
-        }
+        const quality = detectHlsQuality(masterText) || qualityFromRelease(config.title) || 'Auto';
+        const audio = audioSummary(config.audios);
 
         return [{
-            name: `Dizibal ${quality}`.trim(),
-            title: resolved.mediaTitle,
-            url: streamUrl,
+            name: `Dizibal ${quality}`,
+            title: audio ? `${mediaTitle}\n${audio}` : mediaTitle,
+            url: playbackUrl(config.stream, subtitles),
             quality,
             provider: 'dizibal',
             type: 'm3u8',
-            headers: streamHeaders(referer),
+            headers,
             subtitles
         }];
     } catch (e) {

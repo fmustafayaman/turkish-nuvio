@@ -17,9 +17,9 @@ https://raw.githubusercontent.com/fmustafayaman/turkish-nuvio/main/manifest.json
 | Provider | Site | İçerik | Format | Ayarlar |
 |----------|------|--------|--------|---------|
 | **Animecix** | animecix.tv | Anime (film + dizi) | mp4 | TMDB API anahtarı |
-| **FullHDFilmizlesene** | fullhdfilmizlesene.mx | Film | m3u8 | Masaüstü altyazı, TMDB API anahtarı |
-| **Dizifilm** | dizifilm.life | Film + dizi | m3u8 | Masaüstü altyazı, TMDB API anahtarı |
-| **Dizibal** | dizibal.com | Film + dizi | m3u8 | Masaüstü altyazı, TMDB API anahtarı |
+| **FullHDFilmizlesene** | fullhdfilmizlesene.now | Film | m3u8 | Masaüstü altyazı, TMDB API anahtarı |
+| **Dizifilm** | dizifilmizle.to | Film + dizi | m3u8 | Masaüstü altyazı, TMDB API anahtarı |
+| **Dizibal** | dizibal.org | Film + dizi + anime | m3u8 | Masaüstü altyazı, TMDB API anahtarı |
 
 Tüm provider'lar başlık/imdb bilgisi için TMDB kullanır; varsayılan olarak paylaşılan bir topluluk API anahtarı gömülüdür. İstersen her provider'ın Nuvio içindeki ayarlar ekranından ("TMDB API Anahtarı") kendi ücretsiz [TMDB API anahtarını](https://www.themoviedb.org/settings/api) girebilirsin — girilirse TMDB istekleri onunla yapılır, boş bırakılırsa varsayılan anahtar kullanılmaya devam eder.
 
@@ -39,13 +39,21 @@ Testler:
 
 ```bash
 npm test                    # animecix uçtan uca test (test_animecix.js)
-npm run test:fullhdfilm     # fullhdfilm test harness'ı
+npm run test:fullhdfilm     # fullhdfilm test harness'ı (yerelde NATIVE_FETCH=1 ile, aşağıya bak)
 npm run test:dizifilm       # dizifilm test harness'ı
+npm run test:dizibal        # dizibal test harness'ı (stream'in gerçekten açıldığını da doğrular)
 npm run check:domains       # her provider'ın domain adaylarının canlı olup olmadığını kontrol eder
 npm run check:schema        # dönen stream objelerinin sözleşmeye (url/type/quality/headers) uyduğunu doğrular
 ```
 
-Site domain'leri sık değiştiği için (özellikle fullhdfilm/dizifilm) `.github/workflows/health-check.yml` her gün build + testleri + `check:domains`'i çalıştırır; bir şey bozulursa repo'da otomatik bir issue açar/günceller, düzelince kapatır.
+**Cloudflare notu:** Bazı siteler (şu an fullhdfilmizlesene.now) Node/curl'ün TLS parmak izine "Just a moment..." challenge'ı döndürür, ama cihazdaki Nuvio'nun native ağ yığınına sayfayı normal verir. Yerel testin cihazla aynı sonucu vermesi için macOS'ta `NATIVE_FETCH=1` kullan — `fetch` çağrıları `URLSession` üzerinden yapılır (Xcode Command Line Tools gerekir, bkz. `scripts/native-fetch/`):
+
+```bash
+NATIVE_FETCH=1 npm run test:fullhdfilm
+NATIVE_FETCH=1 node -r ./scripts/native-fetch/shim.js scripts/check-stream-schema.js
+```
+
+Site domain'leri sık değiştiği için (özellikle fullhdfilm/dizifilm) `.github/workflows/health-check.yml` her gün build + testleri + `check:domains`'i çalıştırır; bir şey bozulursa repo'da otomatik bir issue açar/günceller, düzelince kapatır. GitHub runner IP'leri Cloudflare arkasındaki sitelerde sıkça engellendiği için testler CI'da `scripts/cf-guard.js` ile koşar: Cloudflare engeli yüzünden başarısız olan kontrol "🛡️ CI'dan doğrulanamadı" olarak raporlanır ve issue açmaz; yalnızca gerçek bozulmalar issue açar.
 
 Hızlı tek provider testi (build sonrası bundle üzerinden):
 

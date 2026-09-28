@@ -13,6 +13,7 @@
     "test": "node test_animecix.js",
     "test:fullhdfilm": "node test_fullhdfilm.js",
     "test:dizifilm": "node test_dizifilm.js",
+    "test:dizibal": "node test_dizibal.js",
     "check:domains": "node scripts/check-domains.js",
     "check:schema": "node scripts/check-stream-schema.js",
     "prepare": "node scripts/install-hooks.js"

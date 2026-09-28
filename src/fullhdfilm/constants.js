@@ -1,10 +1,19 @@
 // FullHDFilmizlesene — Türkçe dublaj/altyazılı film kaynağı.
 // Domain sık değişebilir; alternatifler sırayla denenir.
-// 2026-08: gerçek site www.fullhdfilmizlesene.mx (scx + /arama/ + /film/...).
+// 2026-09: gerçek site www.fullhdfilmizlesene.now (.mx 301 ile buraya yönleniyor;
+// yedek olarak tutuluyor). Yapı aynı: scx + /arama/ + /film/...
 // fullhdfilmizlesene.co AYRI bir klon — katalog/player farklı; adaylara ekleme.
+//
+// Cloudflare: .now, Node/curl'ün TLS parmak izine "Just a moment..." challenge'ı
+// döndürüyor ama Apple'ın native ağ yığınına (URLSession — iOS Nuvio'nun kullandığı)
+// sayfayı normal veriyor; tam bir tarayıcı User-Agent'ı şartıyla (SITE_HEADERS;
+// "Mozilla/5.0" gibi kısa UA engelleniyor). Android (OkHttp) doğrudan test
+// edilmedi; OkHttp tabanlı güncel CloudStream eklentileri .now'a düz istek atıyor.
+// Yerelde cihazla aynı sonucu almak için:
+//   NATIVE_FETCH=1 node test_fullhdfilm.js   (bkz. scripts/native-fetch/)
 export const DOMAIN_CANDIDATES = [
-    'https://www.fullhdfilmizlesene.mx',
-    'https://fullhdfilmizlesene.mx'
+    'https://www.fullhdfilmizlesene.now',
+    'https://www.fullhdfilmizlesene.mx'
 ];
 
 export const SITE_HEADERS = {

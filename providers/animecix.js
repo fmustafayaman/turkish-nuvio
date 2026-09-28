@@ -1,6 +1,6 @@
 /**
  * animecix - Built from src/animecix/
- * Generated: 2026-08-07T22:02:37.660Z
+ * Generated: 2026-09-28T17:37:08.496Z
  */
 var __defProp = Object.defineProperty;
 var __getOwnPropSymbols = Object.getOwnPropertySymbols;
@@ -499,7 +499,7 @@ function fetchJson2(_0) {
 }
 function getTmdbInfo(tmdbId, mediaType) {
   return __async(this, null, function* () {
-    const empty = { title: "", originalTitle: "", turkishTitle: "", year: "", imdbId: null };
+    const empty = { title: "", originalTitle: "", turkishTitle: "", year: "", imdbId: null, posterPath: "" };
     const apiKey = getTmdbApiKey();
     if (!apiKey)
       return empty;
@@ -522,7 +522,10 @@ function getTmdbInfo(tmdbId, mediaType) {
             originalTitle: data.original_title || data.original_name || "",
             turkishTitle,
             year: ((_d = data.release_date) == null ? void 0 : _d.slice(0, 4)) || ((_e = data.first_air_date) == null ? void 0 : _e.slice(0, 4)) || "",
-            imdbId: ((_f = data.external_ids) == null ? void 0 : _f.imdb_id) || data.imdb_id || null
+            imdbId: ((_f = data.external_ids) == null ? void 0 : _f.imdb_id) || data.imdb_id || null,
+            // "/abc.jpg" — TMDB görsellerini aynen kullanan siteler (dizibal)
+            // için başlıktan bağımsız, kesin eşleştirme sinyali.
+            posterPath: data.poster_path || ""
           };
         } catch (e) {
           return empty;
@@ -573,7 +576,7 @@ function resolveSeries(tmdbId, mediaType) {
 function getStreams(tmdbId, mediaType = "tv", season = 1, episode = 1) {
   return __async(this, null, function* () {
     try {
-      console.log(`[Animecix v1.3.3] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
+      console.log(`[Animecix v1.3.4] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
       const resolved = yield resolveSeries(tmdbId, mediaType);
       if (!resolved)
         return [];

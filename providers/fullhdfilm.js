@@ -1,6 +1,6 @@
 /**
  * fullhdfilm - Built from src/fullhdfilm/
- * Generated: 2026-08-08T18:09:18.744Z
+ * Generated: 2026-09-28T17:38:55.647Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -184,7 +184,7 @@ function fetchJson(_0) {
 }
 function getTmdbInfo(tmdbId, mediaType) {
   return __async(this, null, function* () {
-    const empty = { title: "", originalTitle: "", turkishTitle: "", year: "", imdbId: null };
+    const empty = { title: "", originalTitle: "", turkishTitle: "", year: "", imdbId: null, posterPath: "" };
     const apiKey = getTmdbApiKey();
     if (!apiKey)
       return empty;
@@ -207,7 +207,10 @@ function getTmdbInfo(tmdbId, mediaType) {
             originalTitle: data.original_title || data.original_name || "",
             turkishTitle,
             year: ((_d = data.release_date) == null ? void 0 : _d.slice(0, 4)) || ((_e = data.first_air_date) == null ? void 0 : _e.slice(0, 4)) || "",
-            imdbId: ((_f = data.external_ids) == null ? void 0 : _f.imdb_id) || data.imdb_id || null
+            imdbId: ((_f = data.external_ids) == null ? void 0 : _f.imdb_id) || data.imdb_id || null,
+            // "/abc.jpg" — TMDB görsellerini aynen kullanan siteler (dizibal)
+            // için başlıktan bağımsız, kesin eşleştirme sinyali.
+            posterPath: data.poster_path || ""
           };
         } catch (e) {
           return empty;
@@ -222,8 +225,8 @@ function getTmdbInfo(tmdbId, mediaType) {
 
 // src/fullhdfilm/constants.js
 var DOMAIN_CANDIDATES = [
-  "https://www.fullhdfilmizlesene.mx",
-  "https://fullhdfilmizlesene.mx"
+  "https://www.fullhdfilmizlesene.now",
+  "https://www.fullhdfilmizlesene.mx"
 ];
 var SITE_HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
