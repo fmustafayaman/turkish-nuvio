@@ -1,6 +1,6 @@
 /**
  * dizifilm - Built from src/dizifilm/
- * Generated: 2026-09-28T17:37:08.534Z
+ * Generated: 2026-10-22T03:51:16.115Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -182,44 +182,131 @@ function fetchJson(_0) {
     }))(), timeout, url);
   });
 }
+var TV_TYPES = /* @__PURE__ */ new Set(["tv", "series", "show", "serie"]);
+function normalizeMediaType(mediaType) {
+  return TV_TYPES.has(String(mediaType || "").toLowerCase()) ? "tv" : "movie";
+}
+function normalizeContentId(value) {
+  let id = String(value == null ? "" : value).trim();
+  if (!id)
+    return "";
+  id = id.replace(/^tmdb\s*[:\/-]\s*/i, "");
+  const typed = id.match(/^(movie|tv)\s*[:\/-]\s*(\d+)$/i);
+  if (typed)
+    return typed[2];
+  return id.split(/[\/:]/)[0].trim();
+}
+var IMDb_ID_RE = /^tt\d{5,10}$/;
+var imdbMapCache = createTtlCache(24 * 60 * 60 * 1e3, 300);
+function findImdbMapping(imdbId, apiKey) {
+  return __async(this, null, function* () {
+    return yield imdbMapCache.remember(
+      `imdb:${imdbId}`,
+      () => __async(this, null, function* () {
+        try {
+          const url = `https://api.themoviedb.org/3/find/${encodeURIComponent(imdbId)}?api_key=${apiKey}&external_source=imdb_id`;
+          const data = yield fetchJson(url);
+          const movie = ((data == null ? void 0 : data.movie_results) || []).find((r) => r && r.id) || null;
+          const tv = ((data == null ? void 0 : data.tv_results) || []).find((r) => r && r.id) || null;
+          return {
+            movie: movie ? String(movie.id) : null,
+            tv: tv ? String(tv.id) : null
+          };
+        } catch (e) {
+          return { movie: null, tv: null };
+        }
+      }),
+      void 0,
+      // Bulunamayan eşlemeyi cache'leme; IMDb tarafı geçici olarak hata
+      // verirse sonraki istek yeniden denesin.
+      (v) => !!(v && (v.movie || v.tv))
+    );
+  });
+}
+function resolveCandidates(tmdbId, mediaType, apiKey) {
+  return __async(this, null, function* () {
+    const raw = normalizeContentId(tmdbId);
+    const requestedType = normalizeMediaType(mediaType);
+    if (!raw)
+      return [];
+    if (/^\d+$/.test(raw))
+      return [{ id: raw, type: requestedType }];
+    if (!IMDb_ID_RE.test(raw))
+      return [];
+    const mapping = yield findImdbMapping(raw, apiKey);
+    const otherType = requestedType === "tv" ? "movie" : "tv";
+    const candidates = [];
+    if (mapping[requestedType])
+      candidates.push({ id: mapping[requestedType], type: requestedType });
+    if (mapping[otherType])
+      candidates.push({ id: mapping[otherType], type: otherType });
+    return candidates;
+  });
+}
+function fetchTmdbInfo(id, type, apiKey) {
+  return __async(this, null, function* () {
+    var _a, _b, _c, _d;
+    const url = `https://api.themoviedb.org/3/${type}/${id}?api_key=${apiKey}&append_to_response=external_ids,translations`;
+    const data = yield fetchJson(url);
+    let turkishTitle = "";
+    const translations = ((_a = data.translations) == null ? void 0 : _a.translations) || [];
+    const tr = translations.find((t) => t.iso_3166_1 === "TR" || t.iso_639_1 === "tr");
+    if (tr) {
+      turkishTitle = ((_b = tr.data) == null ? void 0 : _b.title) || ((_c = tr.data) == null ? void 0 : _c.name) || "";
+    }
+    return {
+      title: data.name || data.title || data.original_title || "",
+      originalTitle: data.original_title || data.original_name || "",
+      turkishTitle,
+      year: (data.release_date || data.first_air_date || "").slice(0, 4),
+      imdbId: ((_d = data.external_ids) == null ? void 0 : _d.imdb_id) || data.imdb_id || null,
+      // "/abc.jpg" — TMDB görsellerini aynen kullanan siteler (dizibal)
+      // için başlıktan bağımsız, kesin eşleştirme sinyali.
+      posterPath: data.poster_path || ""
+    };
+  });
+}
 function getTmdbInfo(tmdbId, mediaType) {
   return __async(this, null, function* () {
-    const empty = { title: "", originalTitle: "", turkishTitle: "", year: "", imdbId: null, posterPath: "" };
+    const requestedType = normalizeMediaType(mediaType);
+    const empty = {
+      title: "",
+      originalTitle: "",
+      turkishTitle: "",
+      year: "",
+      imdbId: null,
+      posterPath: "",
+      tmdbId: null,
+      mediaType: requestedType,
+      requestedMediaType: requestedType
+    };
     const apiKey = getTmdbApiKey();
     if (!apiKey)
       return empty;
-    const type = mediaType === "tv" ? "tv" : "movie";
-    return yield tmdbInfoCache.remember(
-      `${type}:${tmdbId}`,
-      () => __async(this, null, function* () {
-        var _a, _b, _c, _d, _e, _f;
-        try {
-          const url = `https://api.themoviedb.org/3/${type}/${tmdbId}?api_key=${apiKey}&append_to_response=external_ids,translations`;
-          const data = yield fetchJson(url);
-          let turkishTitle = "";
-          const translations = ((_a = data.translations) == null ? void 0 : _a.translations) || [];
-          const tr = translations.find((t) => t.iso_3166_1 === "TR" || t.iso_639_1 === "tr");
-          if (tr) {
-            turkishTitle = ((_b = tr.data) == null ? void 0 : _b.title) || ((_c = tr.data) == null ? void 0 : _c.name) || "";
+    const candidates = yield resolveCandidates(tmdbId, requestedType, apiKey);
+    for (const candidate of candidates) {
+      const info = yield tmdbInfoCache.remember(
+        `${candidate.type}:${candidate.id}`,
+        () => __async(this, null, function* () {
+          try {
+            return yield fetchTmdbInfo(candidate.id, candidate.type, apiKey);
+          } catch (e) {
+            return null;
           }
-          return {
-            title: data.name || data.title || data.original_title || "",
-            originalTitle: data.original_title || data.original_name || "",
-            turkishTitle,
-            year: ((_d = data.release_date) == null ? void 0 : _d.slice(0, 4)) || ((_e = data.first_air_date) == null ? void 0 : _e.slice(0, 4)) || "",
-            imdbId: ((_f = data.external_ids) == null ? void 0 : _f.imdb_id) || data.imdb_id || null,
-            // "/abc.jpg" — TMDB görsellerini aynen kullanan siteler (dizibal)
-            // için başlıktan bağımsız, kesin eşleştirme sinyali.
-            posterPath: data.poster_path || ""
-          };
-        } catch (e) {
-          return empty;
-        }
-      }),
-      30 * 60 * 1e3,
-      // Boş/hatalı sonucu cache'leme ki geçici bir hata kalıcı boş sonuca dönüşmesin.
-      (v) => !!(v && (v.title || v.originalTitle || v.imdbId))
-    );
+        }),
+        30 * 60 * 1e3,
+        // Boş/hatalı sonucu cache'leme ki geçici bir hata kalıcı boş sonuca dönüşmesin.
+        (v) => !!(v && (v.title || v.originalTitle || v.imdbId))
+      );
+      if (info && (info.title || info.originalTitle || info.imdbId)) {
+        return __spreadProps(__spreadValues({}, info), {
+          tmdbId: Number(candidate.id) || null,
+          mediaType: candidate.type,
+          requestedMediaType: requestedType
+        });
+      }
+    }
+    return empty;
   });
 }
 
@@ -1386,11 +1473,12 @@ function debugStream(msg) {
 function resolveTarget(tmdbId, mediaType, season, episode, steps) {
   return __async(this, null, function* () {
     const type = mediaType === "tv" ? "tv" : "movie";
-    const { title, originalTitle, turkishTitle, year } = yield getTmdbInfo(tmdbId, type);
+    const { title, originalTitle, turkishTitle, year, tmdbId: resolvedTmdbId } = yield getTmdbInfo(tmdbId, type);
     const targets = [...new Set([turkishTitle, title, originalTitle].filter(Boolean))];
     steps == null ? void 0 : steps.push(`tmdb t="${title}" tr="${turkishTitle}" o="${originalTitle}"`);
     if (!targets.length)
       return null;
+    const targetTmdbId = resolvedTmdbId || tmdbId;
     const contentType = expectedContentType(type);
     let resolved = null;
     let totalCandidates = 0;
@@ -1400,9 +1488,9 @@ function resolveTarget(tmdbId, mediaType, season, episode, steps) {
       for (const candidate of candidates.slice(0, 5)) {
         try {
           if (type === "tv") {
-            resolved = yield resolveEpisode(domain, candidate, tmdbId, season, episode);
+            resolved = yield resolveEpisode(domain, candidate, targetTmdbId, season, episode);
           } else {
-            resolved = yield resolveMovie(domain, candidate, tmdbId, `${domain}/`);
+            resolved = yield resolveMovie(domain, candidate, targetTmdbId, `${domain}/`);
           }
         } catch (e) {
           resolved = null;
@@ -1425,7 +1513,7 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
   return __async(this, null, function* () {
     const steps = [];
     try {
-      console.log(`[Dizifilm v1.7.2] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
+      console.log(`[Dizifilm v1.7.3] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
       const resolved = yield resolveTarget(tmdbId, mediaType, season, episode, steps);
       if (!resolved)
         return DEBUG ? debugStream(steps.join(" | ")) : [];

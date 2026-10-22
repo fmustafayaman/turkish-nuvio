@@ -158,11 +158,15 @@ function debugStream(msg) {
 // (yalnızca getStreams'in DEBUG modu) her aşamayı teşhis için biriktirir.
 async function resolveTarget(tmdbId, mediaType, season, episode, steps) {
     const type = mediaType === 'tv' ? 'tv' : 'movie';
-    const { title, originalTitle, turkishTitle, year } = await getTmdbInfo(tmdbId, type);
+    const { title, originalTitle, turkishTitle, year, tmdbId: resolvedTmdbId } = await getTmdbInfo(tmdbId, type);
     const targets = [...new Set([turkishTitle, title, originalTitle].filter(Boolean))];
     steps?.push(`tmdb t="${title}" tr="${turkishTitle}" o="${originalTitle}"`);
     if (!targets.length) return null;
 
+    // Sayfa üzerindeki TMDB ID karşılaştırması her zaman sayısal olmalı:
+    // IMDb tabanlı katalogdan gelen "tt..." kimliği doğrudan kıyaslanırsa
+    // eşleşme hiçbir zaman tutmaz ve tüm adaylar elenir.
+    const targetTmdbId = resolvedTmdbId || tmdbId;
     const contentType = expectedContentType(type);
     let resolved = null;
     let totalCandidates = 0;
@@ -173,9 +177,9 @@ async function resolveTarget(tmdbId, mediaType, season, episode, steps) {
         for (const candidate of candidates.slice(0, 5)) {
             try {
                 if (type === 'tv') {
-                    resolved = await resolveEpisode(domain, candidate, tmdbId, season, episode);
+                    resolved = await resolveEpisode(domain, candidate, targetTmdbId, season, episode);
                 } else {
-                    resolved = await resolveMovie(domain, candidate, tmdbId, `${domain}/`);
+                    resolved = await resolveMovie(domain, candidate, targetTmdbId, `${domain}/`);
                 }
             } catch {
                 resolved = null;
@@ -198,7 +202,7 @@ async function resolveTarget(tmdbId, mediaType, season, episode, steps) {
 async function getStreams(tmdbId, mediaType = 'movie', season = 1, episode = 1) {
     const steps = [];
     try {
-        console.log(`[Dizifilm v1.7.2] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
+        console.log(`[Dizifilm v1.7.3] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
         const resolved = await resolveTarget(tmdbId, mediaType, season, episode, steps);
         if (!resolved) return DEBUG ? debugStream(steps.join(' | ')) : [];
         const mediaTitle = resolved.mediaTitle;

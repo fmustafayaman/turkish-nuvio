@@ -31,10 +31,13 @@ const resolveCache = createTtlCache(30 * 60 * 1000, 200);
 
 async function resolveSeries(tmdbId, mediaType) {
     return await resolveCache.remember(`${mediaType}:${tmdbId}`, async () => {
-        const { title, originalTitle } = await getTmdbInfo(tmdbId, mediaType);
+        const { title, originalTitle, tmdbId: resolvedTmdbId } = await getTmdbInfo(tmdbId, mediaType);
         if (!title && !originalTitle) return null;
 
-        const match = await findByTmdbId(tmdbId, title, originalTitle, mediaType);
+        // Animecix sonuçlarındaki tmdb_id sayısaldır; IMDb tabanlı katalogdan
+        // gelen "tt..." kimliğiyle birebir eşleşme kurulamaz. Çözümlenmiş
+        // sayısal ID'yi kullan ki başlık benzerliğine düşmeden eşleşsin.
+        const match = await findByTmdbId(resolvedTmdbId || tmdbId, title, originalTitle, mediaType);
         if (!match) return null;
 
         return { title, originalTitle, animeId: match.id, animeTitle: match.name || title };
@@ -43,7 +46,7 @@ async function resolveSeries(tmdbId, mediaType) {
 
 async function getStreams(tmdbId, mediaType = 'tv', season = 1, episode = 1) {
     try {
-        console.log(`[Animecix v1.3.4] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
+        console.log(`[Animecix v1.3.5] getStreams tmdb=${tmdbId} type=${mediaType} S${season}E${episode}`);
 
         const resolved = await resolveSeries(tmdbId, mediaType);
         if (!resolved) return [];

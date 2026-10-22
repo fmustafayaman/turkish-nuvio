@@ -3,7 +3,7 @@ import { withTimeout, timeoutSignal, DEFAULT_TIMEOUT_MS } from '../shared/http.j
 import { buildMpvEdlUrl, ensureHlsExtHint, detectHlsQuality, embedSubsSettingsLayout } from '../shared/hls.js';
 import { DOMAIN_CANDIDATES, SITE_HEADERS } from './constants.js';
 
-const VERSION = '1.4.0';
+const VERSION = '1.4.1';
 
 const TR_ASCII_MAP = {
     'ç': 'c', 'Ç': 'c', 'ğ': 'g', 'Ğ': 'g', 'ı': 'i', 'İ': 'i',
