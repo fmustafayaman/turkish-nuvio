@@ -1,6 +1,16 @@
 {
+  "id": "org.turkish.nuvio",
   "name": "Turkish Nuvio",
   "version": "1.22.0",
+  "description": "Dizibal, FullHDFilmizlesene, Animecix, Dizifilm kaynakları.",
+  "resources": [
+    "stream"
+  ],
+  "types": [
+    "movie",
+    "series"
+  ],
+  "catalogs": [],
   "scrapers": [
     {
       "id": "animecix",
